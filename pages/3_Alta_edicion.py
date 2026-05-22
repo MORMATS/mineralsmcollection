@@ -2,6 +2,7 @@ import streamlit as st
 from sqlalchemy import select
 
 from src.db import init_db, get_session
+from src.crud import generate_next_item_code
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import save_uploaded_images
 
@@ -9,6 +10,7 @@ st.set_page_config(page_title="Alta / edicion", page_icon="➕", layout="wide")
 init_db()
 
 st.title("Alta de pieza y subida de fotos")
+st.caption("El ID de pieza se genera automaticamente al guardar.")
 
 db = get_session()
 try:
@@ -20,10 +22,12 @@ try:
         st.warning("Primero crea o importa minerales desde Admin datos o Importar API.")
         st.stop()
 
+    next_item_code = generate_next_item_code(db)
+
     with st.form("new_item", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
-            item_code = st.text_input("ID unico de pieza", placeholder="MIN-0002")
+            st.text_input("ID automatico de pieza", value=next_item_code, disabled=True)
             display_name = st.text_input("Nombre visible")
             mineral_name = st.selectbox("Mineral principal", mineral_names)
             secondary_minerals = st.text_area("Minerales secundarios")
@@ -50,24 +54,24 @@ try:
         submitted = st.form_submit_button("Guardar pieza")
 
     if submitted:
-        if not item_code:
-            st.error("El ID es obligatorio.")
-            st.stop()
-
+        item_code = generate_next_item_code(db)
         existing = db.execute(select(CollectionItem).where(CollectionItem.item_code == item_code)).scalar_one_or_none()
         if existing:
-            st.error("Ya existe una pieza con ese ID.")
+            st.error("No se pudo reservar un ID automatico. Vuelve a guardar la pieza.")
             st.stop()
 
         mineral = mineral_by_name[mineral_name]
-        locality = Locality(
-            name=locality_name or None,
-            mine=mine or None,
-            region=region or None,
-            country=country or None,
-        )
-        db.add(locality)
-        db.flush()
+        has_locality = any([locality_name, mine, region, country])
+        locality = None
+        if has_locality:
+            locality = Locality(
+                name=locality_name or None,
+                mine=mine or None,
+                region=region or None,
+                country=country or None,
+            )
+            db.add(locality)
+            db.flush()
 
         item = CollectionItem(
             item_code=item_code.strip(),

@@ -1,9 +1,37 @@
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload, Session
 
 from src.models import CollectionItem, MineralSpecies, Locality, Chakra
+
+
+ITEM_CODE_RE = re.compile(r"^([A-Za-z]+)-(\d+)$")
+
+
+def generate_next_item_code(db: Session, prefix: str = "MIN", width: int = 4) -> str:
+    """Return the next collection code using the current MIN-0001 style."""
+    normalized_prefix = prefix.strip().upper() or "MIN"
+    codes = (
+        db.execute(
+            select(CollectionItem.item_code).where(
+                CollectionItem.item_code.ilike(f"{normalized_prefix}-%")
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    max_number = 0
+    for code in codes:
+        match = ITEM_CODE_RE.match(code.strip())
+        if not match or match.group(1).upper() != normalized_prefix:
+            continue
+        max_number = max(max_number, int(match.group(2)))
+
+    return f"{normalized_prefix}-{max_number + 1:0{width}d}"
 
 
 def list_collection_items(

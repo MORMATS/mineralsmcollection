@@ -45,6 +45,8 @@ try:
                 "ID": item.item_code,
                 "Nombre": item.display_name or item.mineral.name,
                 "Mineral": item.mineral.name,
+                "Formula": item.mineral.formula or "",
+                "Sistema": item.mineral.crystal_system or "",
                 "Vendido": "Si" if item.sold else "No",
                 "Pais": item.locality.country if item.locality else "",
                 "Region": item.locality.region if item.locality else "",
@@ -90,5 +92,8 @@ try:
             if st.button("Ver ficha", key=f"open_{item.id}"):
                 st.session_state["selected_item_code"] = item.item_code
                 st.switch_page("pages/2_Ficha.py")
+            if st.button("Ver wiki mineral", key=f"wiki_{item.id}"):
+                st.session_state["selected_mineral_name"] = item.mineral.name
+                st.switch_page("pages/6_Wiki_minerales.py")
 finally:
     db.close()

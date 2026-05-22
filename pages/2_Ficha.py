@@ -2,6 +2,8 @@ import streamlit as st
 
 from src.db import init_db, get_session, UPLOAD_DIR
 from src.crud import get_item_by_code
+from src.wiki import load_mindat_raw
+from src.wiki_view import render_generic_photo, render_mineral_wiki
 
 st.set_page_config(page_title="Ficha mineral", page_icon="🔎", layout="wide")
 init_db()
@@ -26,23 +28,21 @@ try:
                     st.image(str(UPLOAD_DIR.parent / img.file_path), caption=img.caption, use_container_width=True)
             else:
                 st.info("Esta pieza no tiene fotos.")
+                st.caption("Foto generica del mineral")
+                render_generic_photo(item.mineral.name)
 
         with right:
             st.header(item.display_name or item.mineral.name)
             st.write(f"**ID:** {item.item_code}")
             st.write(f"**Mineral principal:** {item.mineral.name}")
-            st.write(f"**Formula:** {item.mineral.formula or '-'}")
-            st.write(f"**Sistema cristalino:** {item.mineral.crystal_system or '-'}")
-            st.write(f"**Dureza:** {item.mineral.hardness_min or '-'} - {item.mineral.hardness_max or '-'}")
-            st.write(f"**Color:** {item.mineral.color or '-'}")
-            st.write(f"**Brillo:** {item.mineral.luster or '-'}")
-            st.write(f"**Chakras:** {', '.join(c.name for c in item.mineral.chakras) or '-'}")
-            st.write(f"**Zodiaco:** {', '.join(z.name for z in item.mineral.zodiac_signs) or '-'}")
-            st.write(f"**Fuente API:** {item.mineral.source_url or '-'}")
             st.write(f"**Vendido:** {'Si' if item.sold else 'No'}")
             if item.purchase_link:
                 st.link_button("Comprar / ver anuncio", item.purchase_link)
 
+        st.divider()
+        ficha_tab, wiki_tab, api_tab = st.tabs(["Pieza", "Wiki mineral", "Datos Mindat"])
+
+        with ficha_tab:
             if item.locality:
                 st.subheader("Localidad")
                 st.write(f"**Nombre:** {item.locality.name or '-'}")
@@ -54,6 +54,22 @@ try:
             st.write(f"**Caracteristicas especiales:** {item.special_features or '-'}")
             st.write(f"**Minerales secundarios:** {item.secondary_minerals or '-'}")
             st.write(f"**Notas:** {item.notes or '-'}")
+
+        with wiki_tab:
+            chakra_names = ", ".join(c.name for c in item.mineral.chakras)
+            zodiac_names = ", ".join(z.name for z in item.mineral.zodiac_signs)
+            render_mineral_wiki(item.mineral)
+            if chakra_names or zodiac_names:
+                st.markdown("#### Asociaciones personales")
+                st.write(f"**Chakras:** {chakra_names or '-'}")
+                st.write(f"**Zodiaco:** {zodiac_names or '-'}")
+
+        with api_tab:
+            raw = load_mindat_raw(item.mineral)
+            if raw:
+                st.json(raw)
+            else:
+                st.info("Este mineral todavia no tiene JSON de Mindat guardado.")
     else:
         st.info("Introduce un ID para buscar una pieza.")
 finally:

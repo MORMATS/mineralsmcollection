@@ -32,6 +32,6 @@ try:
         st.session_state["selected_item_code"] = item_code.strip()
         st.switch_page("pages/2_Ficha.py")
 
-    st.info("Usa la barra lateral para ir a Coleccion, Ficha, Alta/edicion, Admin datos o Importar API.")
+    st.info("Usa la barra lateral para ir a Coleccion, Ficha, Alta/edicion, Wiki minerales, Admin datos o Importar API.")
 finally:
     db.close()

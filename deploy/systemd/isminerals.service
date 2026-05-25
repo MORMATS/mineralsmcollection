@@ -1,0 +1,21 @@
+[Unit]
+Description=IS Minerals Streamlit app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=isminerals
+Group=isminerals
+WorkingDirectory=/opt/isminerals/app
+EnvironmentFile=/etc/isminerals/isminerals.env
+ExecStart=/opt/isminerals/app/.venv/bin/streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/isminerals /opt/isminerals/app
+
+[Install]
+WantedBy=multi-user.target

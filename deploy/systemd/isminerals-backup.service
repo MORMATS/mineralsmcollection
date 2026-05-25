@@ -1,0 +1,9 @@
+[Unit]
+Description=IS Minerals PostgreSQL and uploads backup
+
+[Service]
+Type=oneshot
+User=isminerals
+Group=isminerals
+EnvironmentFile=/etc/isminerals/isminerals.env
+ExecStart=/bin/bash /opt/isminerals/app/scripts/backup_lxc.sh

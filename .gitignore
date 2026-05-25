@@ -1,8 +1,12 @@
 .env
 .streamlit/secrets.toml
 __pycache__/
+.pytest_cache/
 *.pyc
 data/*.db
 uploads/*
 !uploads/.gitkeep
 .venv/
+*.log
+*.err
+migrations/versions/__pycache__/

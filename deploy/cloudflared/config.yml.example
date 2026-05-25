@@ -1,0 +1,7 @@
+tunnel: CAMBIA_TUNNEL_ID
+credentials-file: /etc/cloudflared/CAMBIA_TUNNEL_ID.json
+
+ingress:
+  - hostname: isminerals.neodataglobal.com
+    service: http://127.0.0.1:8501
+  - service: http_status:404

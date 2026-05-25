@@ -1,14 +1,18 @@
+import logging
+
 import streamlit as st
 from sqlalchemy import or_, select
 
-from src.db import init_db, get_session
+from src.auth import admin_unlocked
+from src.db import get_session
 from src.mindat_api import MindatConfigError, upsert_mindat_mineral
 from src.models import MineralSpecies
+from src.settings import is_production
 from src.wiki import load_mindat_raw
 from src.wiki_view import render_mineral_wiki
 
-st.set_page_config(page_title="Wiki minerales", page_icon=":book:", layout="wide")
-init_db()
+
+logger = logging.getLogger(__name__)
 
 st.title("Wiki de minerales")
 st.caption("Fichas de referencia para los minerales de tu coleccion, ampliadas con Mindat.")
@@ -46,13 +50,17 @@ try:
     c2.metric("Mindat ID", mineral.mindat_id or "-")
     c3.metric("Datos API", "Si" if mineral.api_raw_json else "No")
 
-    if st.button("Actualizar este mineral desde Mindat"):
+    if admin_unlocked() and st.button("Actualizar este mineral desde Mindat"):
         try:
             updated, message = upsert_mindat_mineral(db, mineral.name)
         except MindatConfigError as exc:
             st.error(str(exc))
         except Exception as exc:
-            st.error(f"Error consultando Mindat: {exc}")
+            logger.exception("Error updating Mindat mineral %s", mineral.name)
+            if is_production():
+                st.error("Error consultando Mindat. Revisa los logs del servicio.")
+            else:
+                st.error(f"Error consultando Mindat: {exc}")
         else:
             if updated:
                 st.success(message)
@@ -69,13 +77,14 @@ try:
             label = f"{item.item_code} - {item.display_name or mineral.name}"
             if st.button(label, key=f"item_{item.id}"):
                 st.session_state["selected_item_code"] = item.item_code
-                st.switch_page("pages/2_Ficha.py")
+                st.switch_page("views/2_Ficha.py")
 
-    with st.expander("JSON completo de Mindat"):
-        raw = load_mindat_raw(mineral)
-        if raw:
-            st.json(raw)
-        else:
-            st.info("Todavia no hay JSON de Mindat para este mineral.")
+    if admin_unlocked():
+        with st.expander("JSON completo de Mindat"):
+            raw = load_mindat_raw(mineral)
+            if raw:
+                st.json(raw)
+            else:
+                st.info("Todavia no hay JSON de Mindat para este mineral.")
 finally:
     db.close()

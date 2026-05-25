@@ -1,115 +1,90 @@
-# PostgreSQL en un LXC de Proxmox para la app de Minerales
+# PostgreSQL en LXC Proxmox para IS Minerals
 
-Esta guía sustituye el `docker-compose.yml`. PostgreSQL vivirá en un contenedor LXC de Proxmox y la app Streamlit se conectará por IP.
+Esta guia cubre solo el LXC de PostgreSQL. Para el despliegue completo con app, backups y Cloudflare Tunnel, usa tambien `docs/production_deploy.md`.
 
 ## Arquitectura recomendada
 
 ```text
-[Streamlit app] ---> TCP 5432 ---> [LXC Proxmox: PostgreSQL]
+[LXC isminerals-app] ---> TCP 5432 ---> [LXC isminerals-db: PostgreSQL]
 ```
 
-Puede ser:
+Usa dos LXC separados para aislar la app de la base de datos.
 
-1. Streamlit en tu PC/servidor y PostgreSQL en LXC.
-2. Streamlit y PostgreSQL en el mismo LXC.
-3. Streamlit en otro LXC y PostgreSQL en un LXC separado.
+## 1. Crear LXC de PostgreSQL
 
-Para separar responsabilidades, recomiendo la opción 1 o 3.
-
-## 1. Crear LXC en Proxmox
-
-Desde la interfaz web de Proxmox:
+Desde Proxmox:
 
 - Template: Debian 12 o Ubuntu Server LTS.
 - CPU: 1-2 cores.
 - RAM: 1-2 GB para empezar.
-- Disco: 8-16 GB mínimo; más si guardarás muchas copias/backups.
+- Disco: 8-16 GB minimo, mas si guardas backups locales.
 - Red: bridge `vmbr0`.
 - IP: fija o reserva DHCP, por ejemplo `192.168.1.50`.
 - Unprivileged container: recomendado.
 
-Después entra por consola o SSH.
+## 2. Instalar PostgreSQL
 
-## 2. Instalar PostgreSQL dentro del LXC
-
-Copia el proyecto al LXC o solo el script `scripts/setup_postgres_lxc.sh`.
-
-Ejemplo con variables:
+Copia el proyecto o al menos `scripts/setup_postgres_lxc.sh` al LXC de DB.
 
 ```bash
-export DB_NAME="minerales"
-export DB_USER="minerales_user"
+export DB_NAME="isminerals"
+export DB_USER="isminerals_app"
 export DB_PASSWORD="pon_una_password_larga"
-export APP_CIDR="192.168.1.25/32"  # IP de la maquina donde corre Streamlit
+export APP_CIDR="192.168.1.25/32"  # IP del LXC de app
+export DB_LISTEN_ADDRESSES="*"     # O la IP privada concreta del LXC DB
 sudo bash scripts/setup_postgres_lxc.sh
 ```
 
-Si Streamlit puede correr desde cualquier equipo de tu LAN, puedes usar temporalmente:
+El script no acepta `APP_CIDR` amplio salvo que lo autorices explicitamente:
 
 ```bash
+export ALLOW_BROAD_CIDR=true
 export APP_CIDR="192.168.1.0/24"
 ```
 
-Mejor usar `/32` para permitir solo una IP.
+Para produccion, usa `/32`.
 
-## 3. Configuración que aplica el script
+## 3. Configuracion aplicada
 
-Instala:
-
-```bash
-apt update
-apt install -y postgresql postgresql-contrib
-```
-
-Crea:
+El script instala PostgreSQL, crea:
 
 ```sql
-CREATE ROLE minerales_user LOGIN PASSWORD '...';
-CREATE DATABASE minerales OWNER minerales_user;
-GRANT ALL PRIVILEGES ON DATABASE minerales TO minerales_user;
+CREATE ROLE isminerals_app LOGIN PASSWORD '...';
+CREATE DATABASE isminerals OWNER isminerals_app;
+GRANT ALL PRIVILEGES ON DATABASE isminerals TO isminerals_app;
 ```
 
-Modifica `postgresql.conf`:
+Y anade una regla `pg_hba.conf` restringida al LXC de app:
 
 ```conf
-listen_addresses = '*'
+host    isminerals    isminerals_app    192.168.1.25/32    scram-sha-256
 ```
 
-Y añade en `pg_hba.conf`:
+## 4. Configurar la app
 
-```conf
-host    minerales    minerales_user    192.168.1.25/32    scram-sha-256
-```
-
-Luego reinicia:
-
-```bash
-systemctl restart postgresql
-```
-
-## 4. Configurar Streamlit
-
-En la máquina donde corre Streamlit:
+En el LXC de app, guarda en `/etc/isminerals/isminerals.env`:
 
 ```env
-DATABASE_URL=postgresql+psycopg://minerales_user:pon_una_password_larga@192.168.1.50:5432/minerales
+APP_ENV=production
+DATABASE_URL=postgresql+psycopg://isminerals_app:pon_una_password_larga@192.168.1.50:5432/isminerals
+ADMIN_PASSWORD_HASH=tu_contrasena_o_hash
+UPLOAD_DIR=/var/lib/isminerals/uploads
 MINDAT_API_KEY=
 ```
 
-Después:
+Despues ejecuta:
 
 ```bash
 python scripts/test_db.py
 python scripts/init_db.py
-streamlit run app.py
 ```
 
-## 5. Comprobar conexión manual
+## 5. Comprobar conexion manual
 
-Desde la máquina de Streamlit:
+Desde el LXC de app:
 
 ```bash
-psql "postgresql://minerales_user:pon_una_password_larga@192.168.1.50:5432/minerales"
+psql "postgresql://isminerals_app:pon_una_password_larga@192.168.1.50:5432/isminerals"
 ```
 
 Dentro de `psql`:
@@ -120,9 +95,9 @@ select current_database(), current_user;
 
 ## 6. Firewall
 
-Si usas firewall en Proxmox o dentro del LXC, permite solo la IP de Streamlit hacia el puerto `5432`.
+Permite solo la IP del LXC de app hacia el puerto `5432`.
 
-Ejemplo con UFW dentro del LXC:
+Ejemplo con UFW dentro del LXC DB:
 
 ```bash
 ufw allow from 192.168.1.25 to any port 5432 proto tcp
@@ -131,16 +106,11 @@ ufw enable
 
 ## 7. Backups
 
-Dump lógico:
+En produccion usa `isminerals-backup.timer`, definido en `deploy/systemd/`.
+
+Comprobacion manual:
 
 ```bash
-pg_dump -U minerales_user -h localhost minerales > minerales_backup.sql
+systemctl start isminerals-backup.service
+ls -lh /var/backups/isminerals
 ```
-
-Restaurar:
-
-```bash
-psql -U minerales_user -h localhost minerales < minerales_backup.sql
-```
-
-También puedes usar backups de Proxmox a nivel de LXC.

@@ -1,11 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from src.db import init_db, get_session, UPLOAD_DIR
+from src.db import get_session, UPLOAD_DIR
 from src.crud import list_collection_items, option_lists
-
-st.set_page_config(page_title="Coleccion", page_icon="📚", layout="wide")
-init_db()
 
 st.title("Coleccion completa")
 db = get_session()
@@ -91,9 +88,9 @@ try:
                 st.link_button("Comprar / ver anuncio", item.purchase_link)
             if st.button("Ver ficha", key=f"open_{item.id}"):
                 st.session_state["selected_item_code"] = item.item_code
-                st.switch_page("pages/2_Ficha.py")
+                st.switch_page("views/2_Ficha.py")
             if st.button("Ver wiki mineral", key=f"wiki_{item.id}"):
                 st.session_state["selected_mineral_name"] = item.mineral.name
-                st.switch_page("pages/6_Wiki_minerales.py")
+                st.switch_page("views/6_Wiki_minerales.py")
 finally:
     db.close()

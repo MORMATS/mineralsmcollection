@@ -5,7 +5,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.db import init_db, get_session
+from src.db import get_session
 from src.mindat_api import upsert_mindat_mineral
 
 
@@ -14,7 +14,6 @@ def main():
     parser.add_argument("--names", required=True, help="Comma-separated mineral names")
     args = parser.parse_args()
 
-    init_db()
     db = get_session()
     try:
         for name in [n.strip() for n in args.names.split(",") if n.strip()]:

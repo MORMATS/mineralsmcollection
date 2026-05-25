@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import html
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
@@ -280,7 +280,7 @@ def upsert_mindat_mineral(db: Session, name: str) -> tuple[MineralSpecies | None
         if value not in (None, ""):
             setattr(mineral, field, value)
 
-    mineral.updated_at = datetime.utcnow()
+    mineral.updated_at = datetime.now(UTC).replace(tzinfo=None)
     db.add(mineral)
     db.commit()
     db.refresh(mineral)

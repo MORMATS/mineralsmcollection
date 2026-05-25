@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_NAME="${DB_NAME:-minerales}"
-DB_USER="${DB_USER:-minerales_user}"
-DB_PASSWORD="${DB_PASSWORD:-minerales_password_segura}"
-APP_CIDR="${APP_CIDR:-192.168.1.0/24}"
+DB_NAME="${DB_NAME:-isminerals}"
+DB_USER="${DB_USER:-isminerals_app}"
+: "${DB_PASSWORD:?Set DB_PASSWORD to a long random password.}"
+: "${APP_CIDR:?Set APP_CIDR to the app LXC IP/CIDR, preferably x.x.x.x/32.}"
+DB_LISTEN_ADDRESSES="${DB_LISTEN_ADDRESSES:-*}"
+ALLOW_BROAD_CIDR="${ALLOW_BROAD_CIDR:-false}"
+
+if [[ ! "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || [[ ! "$DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "DB_NAME and DB_USER must be simple PostgreSQL identifiers." >&2
+  exit 1
+fi
+
+if [[ "$APP_CIDR" != */32 && "$ALLOW_BROAD_CIDR" != "true" ]]; then
+  echo "APP_CIDR should be a single app host (/32). Set ALLOW_BROAD_CIDR=true to override." >&2
+  exit 1
+fi
+
+DB_PASSWORD_SQL="${DB_PASSWORD//\'/\'\'}"
 
 echo "[1/6] Instalando PostgreSQL..."
 apt update
@@ -21,9 +35,9 @@ BEGIN
    IF NOT EXISTS (
       SELECT FROM pg_catalog.pg_roles WHERE rolname = '${DB_USER}'
    ) THEN
-      CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
+      CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD_SQL}';
    ELSE
-      ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+      ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD_SQL}';
    END IF;
 END
 \$do\$;
@@ -40,11 +54,11 @@ PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
 
 echo "[4/6] Configurando listen_addresses..."
 if grep -q "^#listen_addresses" "$PG_CONF"; then
-  sed -i "s/^#listen_addresses.*/listen_addresses = '*'/" "$PG_CONF"
+  sed -i "s/^#listen_addresses.*/listen_addresses = '${DB_LISTEN_ADDRESSES}'/" "$PG_CONF"
 elif grep -q "^listen_addresses" "$PG_CONF"; then
-  sed -i "s/^listen_addresses.*/listen_addresses = '*'/" "$PG_CONF"
+  sed -i "s/^listen_addresses.*/listen_addresses = '${DB_LISTEN_ADDRESSES}'/" "$PG_CONF"
 else
-  echo "listen_addresses = '*'" >> "$PG_CONF"
+  echo "listen_addresses = '${DB_LISTEN_ADDRESSES}'" >> "$PG_CONF"
 fi
 
 echo "[5/6] Configurando pg_hba.conf para ${APP_CIDR}..."
@@ -64,7 +78,8 @@ echo "PostgreSQL listo."
 echo "DB_NAME=${DB_NAME}"
 echo "DB_USER=${DB_USER}"
 echo "APP_CIDR=${APP_CIDR}"
+echo "DB_LISTEN_ADDRESSES=${DB_LISTEN_ADDRESSES}"
 echo
-echo "DATABASE_URL=postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@IP_DEL_LXC:5432/${DB_NAME}"
+echo "DATABASE_URL=postgresql+psycopg://${DB_USER}:<password>@IP_DEL_LXC_DB:5432/${DB_NAME}"
 echo
-echo "Recuerda sustituir IP_DEL_LXC por la IP real del LXC."
+echo "Recuerda sustituir IP_DEL_LXC_DB y guardar la password solo en el entorno de la app."

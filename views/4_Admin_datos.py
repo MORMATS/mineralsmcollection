@@ -1,12 +1,12 @@
 import streamlit as st
 from sqlalchemy import select
 
-from src.db import init_db, get_session
+from src.auth import require_admin_access
+from src.db import get_session
 from src.models import MineralSpecies, Chakra, ZodiacSign
 from src.seeds import seed_all
 
-st.set_page_config(page_title="Admin datos", page_icon="⚙️", layout="wide")
-init_db()
+require_admin_access()
 
 st.title("Admin de datos de referencia")
 

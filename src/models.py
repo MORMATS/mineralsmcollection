@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from sqlalchemy import (
     Boolean,
     Column,
@@ -17,6 +17,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 mineral_chakras = Table(
@@ -78,7 +82,7 @@ class MineralSpecies(Base):
     description: Mapped[str | None] = mapped_column(Text)
     source_url: Mapped[str | None] = mapped_column(String(500))
     api_raw_json: Mapped[str | None] = mapped_column(Text)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     chakras: Mapped[list[Chakra]] = relationship(
         secondary=mineral_chakras, back_populates="minerals"
@@ -124,7 +128,7 @@ class CollectionItem(Base):
     special_features: Mapped[str | None] = mapped_column(Text)
     secondary_minerals: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     mineral: Mapped[MineralSpecies] = relationship(back_populates="items")
     locality: Mapped[Locality | None] = relationship(back_populates="items")

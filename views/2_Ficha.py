@@ -1,12 +1,9 @@
 import streamlit as st
 
-from src.db import init_db, get_session, UPLOAD_DIR
+from src.db import get_session, UPLOAD_DIR
 from src.crud import get_item_by_code
 from src.wiki import load_mindat_raw
 from src.wiki_view import render_generic_photo, render_mineral_wiki
-
-st.set_page_config(page_title="Ficha mineral", page_icon="🔎", layout="wide")
-init_db()
 
 st.title("Ficha de pieza")
 

@@ -54,6 +54,8 @@ python scripts/init_db.py
 streamlit run app.py
 ```
 
+Para produccion con `isminerals.neodataglobal.com`, sigue `docs/production_deploy.md`.
+
 ## 4. Usar Mindat API
 
 Pon tu token en `.env`:
@@ -70,11 +72,33 @@ python scripts/import_mindat.py --names "Quartz,Amethyst,Fluorite"
 
 O desde la web app: abre la página **Importar API**.
 
-## 5. Estructura principal
+## 5. Acceso de administracion
+
+Las paginas **Alta/edicion**, **Admin datos** e **Importar API** quedan ocultas hasta desbloquear el acceso admin.
+
+Escribe tu contrasena en `.env` o en `/etc/isminerals/isminerals.env`:
+
+```env
+ADMIN_PASSWORD_HASH=tu_contrasena
+```
+
+Cuando pongas esa misma contrasena en la web, se desbloqueara el acceso.
+
+Si prefieres no guardar la clave directa, genera un hash PBKDF2 y pegalo en la misma variable:
+
+```bash
+python scripts/hash_admin_password.py
+```
+
+```env
+ADMIN_PASSWORD_HASH=pbkdf2_sha256:...
+```
+
+## 6. Estructura principal
 
 ```text
 app.py
-pages/
+views/
   1_Coleccion.py
   2_Ficha.py
   3_Alta_edicion.py
@@ -96,7 +120,7 @@ src/
   image_utils.py
 ```
 
-## 6. Seguridad mínima recomendada
+## 7. Seguridad mínima recomendada
 
 - Usa IP fija/reserva DHCP para el LXC.
 - No abras PostgreSQL a Internet; limítalo a tu LAN o VPN.

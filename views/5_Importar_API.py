@@ -1,13 +1,19 @@
+import logging
+
 import streamlit as st
 from sqlalchemy import select
 
-from src.db import init_db, get_session
+from src.auth import require_admin_access
+from src.db import get_session
 from src.mindat_api import upsert_mindat_mineral, MindatConfigError
 from src.models import CollectionItem, MineralSpecies
 from src.settings import get_setting
+from src.settings import is_production
 
-st.set_page_config(page_title="Importar API", page_icon="🌐", layout="wide")
-init_db()
+
+logger = logging.getLogger(__name__)
+
+require_admin_access()
 
 st.title("Importar minerales desde Mindat API")
 st.caption("Busca minerales por nombre, pide la ficha detallada si Mindat la expone y guarda el JSON completo.")
@@ -56,7 +62,11 @@ def import_names(names: list[str]) -> None:
                     st.error(str(exc))
                     st.stop()
                 except Exception as exc:
-                    st.error(f"Error importando {name}: {exc}")
+                    logger.exception("Error importing Mindat mineral %s", name)
+                    if is_production():
+                        st.error(f"Error importando {name}. Revisa los logs del servicio.")
+                    else:
+                        st.error(f"Error importando {name}: {exc}")
     finally:
         db.close()
 

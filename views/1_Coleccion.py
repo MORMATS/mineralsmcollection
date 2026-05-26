@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import list_collection_items, option_lists
 
@@ -92,5 +93,8 @@ try:
             if st.button("Ver wiki mineral", key=f"wiki_{item.id}"):
                 st.session_state["selected_mineral_name"] = item.mineral.name
                 st.switch_page("views/6_Wiki_minerales.py")
+            if admin_unlocked() and st.button("Editar", key=f"edit_{item.id}"):
+                st.session_state["editing_item_code"] = item.item_code
+                st.switch_page("views/3_Alta_edicion.py")
 finally:
     db.close()

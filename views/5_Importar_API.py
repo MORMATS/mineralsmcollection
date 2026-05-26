@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 require_admin_access()
 
 st.title("Importar minerales desde Mindat API")
-st.caption("Busca minerales por nombre, pide la ficha detallada si Mindat la expone y guarda el JSON completo.")
+st.caption("Busca minerales por nombre y actualiza los datos utiles de la wiki si Mindat los expone.")
 
 has_token = bool(get_setting("MINDAT_API_KEY", ""))
 if has_token:

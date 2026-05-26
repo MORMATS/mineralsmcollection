@@ -31,13 +31,13 @@ def safe_slug(value: str) -> str:
     return value or "item"
 
 
-def save_uploaded_images(item_code: str, uploaded_files) -> list[str]:
+def save_uploaded_images(item_code: str, uploaded_files, start_index: int = 0) -> list[str]:
     paths: list[str] = []
     item_dir = UPLOAD_DIR / safe_slug(item_code)
     item_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        for index, uploaded in enumerate(uploaded_files or []):
+        for index, uploaded in enumerate(uploaded_files or [], start=start_index + 1):
             content = bytes(uploaded.getbuffer())
             max_bytes = MAX_UPLOAD_MB * 1024 * 1024
             if len(content) > max_bytes:
@@ -56,7 +56,7 @@ def save_uploaded_images(item_code: str, uploaded_files) -> list[str]:
             if width * height > MAX_IMAGE_PIXELS:
                 raise ImageUploadError(f"{uploaded.name} tiene demasiados pixeles.")
 
-            dest = item_dir / f"{safe_slug(item_code)}-{index + 1}.webp"
+            dest = item_dir / f"{safe_slug(item_code)}-{index}.webp"
             with Image.open(BytesIO(content)) as img:
                 img.thumbnail(THUMBNAIL_SIZE)
                 if img.mode not in ("RGB", "RGBA"):

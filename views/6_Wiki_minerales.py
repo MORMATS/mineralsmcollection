@@ -8,7 +8,6 @@ from src.db import get_session
 from src.mindat_api import MindatConfigError, upsert_mindat_mineral
 from src.models import MineralSpecies
 from src.settings import is_production
-from src.wiki import load_mindat_raw
 from src.wiki_view import render_mineral_wiki
 
 
@@ -79,12 +78,5 @@ try:
                 st.session_state["selected_item_code"] = item.item_code
                 st.switch_page("views/2_Ficha.py")
 
-    if admin_unlocked():
-        with st.expander("JSON completo de Mindat"):
-            raw = load_mindat_raw(mineral)
-            if raw:
-                st.json(raw)
-            else:
-                st.info("Todavia no hay JSON de Mindat para este mineral.")
 finally:
     db.close()

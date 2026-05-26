@@ -133,7 +133,7 @@ class CollectionItem(Base):
     mineral: Mapped[MineralSpecies] = relationship(back_populates="items")
     locality: Mapped[Locality | None] = relationship(back_populates="items")
     images: Mapped[list["ItemImage"]] = relationship(
-        back_populates="item", cascade="all, delete-orphan"
+        back_populates="item", cascade="all, delete-orphan", order_by="ItemImage.sort_order, ItemImage.id"
     )
 
 
@@ -145,5 +145,6 @@ class ItemImage(Base):
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     caption: Mapped[str | None] = mapped_column(String(255))
     is_cover: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int | None] = mapped_column(Integer)
 
     item: Mapped[CollectionItem] = relationship(back_populates="images")

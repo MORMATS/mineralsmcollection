@@ -68,21 +68,29 @@ def lock_admin() -> None:
 
 
 def render_admin_sidebar() -> None:
+    login_requested = st.query_params.get("admin") == "1"
+
+    if not admin_unlocked() and not login_requested:
+        with st.sidebar:
+            st.markdown(
+                '<a class="admin-corner" href="?admin=1" target="_self">Admin</a>',
+                unsafe_allow_html=True,
+            )
+        return
+
     with st.sidebar:
-        st.divider()
-        st.subheader("Acceso admin")
+        with st.expander("Admin", expanded=login_requested and not admin_unlocked()):
+            if admin_unlocked():
+                st.caption("Acceso activo")
+                if st.button("Bloquear", key="admin_lock"):
+                    lock_admin()
+                    st.rerun()
+                return
 
-        if admin_unlocked():
-            st.success("Desbloqueado")
-            if st.button("Bloquear", key="admin_lock"):
-                lock_admin()
-                st.rerun()
-            return
-
-        if admin_password_configured():
-            _render_unlock_form("sidebar")
-        else:
-            st.error("ADMIN_PASSWORD_HASH no esta configurado.")
+            if admin_password_configured():
+                _render_unlock_form("sidebar")
+            else:
+                st.caption("ADMIN_PASSWORD_HASH no esta configurado.")
 
 
 def require_admin_access() -> None:

@@ -17,3 +17,4 @@ def test_alembic_initial_migration_creates_schema(monkeypatch, tmp_path):
     assert "collection_items" in tables
     assert "mineral_species" in tables
     assert "item_images" in tables
+    assert "sort_order" in [column["name"] for column in inspector.get_columns("item_images")]

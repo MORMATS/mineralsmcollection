@@ -11,6 +11,22 @@ from src.models import CollectionItem, MineralSpecies, Locality, Chakra
 ITEM_CODE_RE = re.compile(r"^([A-Za-z]+)-(\d+)$")
 
 
+def normalize_item_code(value: str, prefix: str = "MIN", width: int = 4) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+
+    normalized_prefix = prefix.strip().upper() or "MIN"
+    if value.isdigit():
+        return f"{normalized_prefix}-{int(value):0{width}d}"
+
+    match = ITEM_CODE_RE.match(value)
+    if match:
+        return f"{match.group(1).upper()}-{int(match.group(2)):0{width}d}"
+
+    return value.upper()
+
+
 def generate_next_item_code(db: Session, prefix: str = "MIN", width: int = 4) -> str:
     """Return the next collection code using the current MIN-0001 style."""
     normalized_prefix = prefix.strip().upper() or "MIN"
@@ -54,10 +70,13 @@ def list_collection_items(
     )
 
     if text:
-        like = f"%{text.strip()}%"
+        clean_text = text.strip()
+        like = f"%{clean_text}%"
+        normalized_code = normalize_item_code(clean_text)
         stmt = stmt.where(
             or_(
                 CollectionItem.item_code.ilike(like),
+                CollectionItem.item_code == normalized_code,
                 CollectionItem.display_name.ilike(like),
                 MineralSpecies.name.ilike(like),
                 CollectionItem.secondary_minerals.ilike(like),
@@ -82,6 +101,7 @@ def list_collection_items(
 
 
 def get_item_by_code(db: Session, item_code: str):
+    normalized_code = normalize_item_code(item_code)
     stmt = (
         select(CollectionItem)
         .options(
@@ -90,7 +110,7 @@ def get_item_by_code(db: Session, item_code: str):
             joinedload(CollectionItem.locality),
             joinedload(CollectionItem.images),
         )
-        .where(CollectionItem.item_code == item_code)
+        .where(CollectionItem.item_code == normalized_code)
     )
     return db.execute(stmt).unique().scalar_one_or_none()
 

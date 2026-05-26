@@ -3,11 +3,8 @@ import streamlit as st
 from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import get_item_by_code
+from src.item_images import ordered_images
 from src.wiki_view import render_generic_photo, render_mineral_wiki
-
-
-def ordered_images(item):
-    return sorted(item.images, key=lambda image: (not image.is_cover, image.id or 0))
 
 
 def move_photo(key: str, count: int, delta: int) -> None:
@@ -16,7 +13,11 @@ def move_photo(key: str, count: int, delta: int) -> None:
 
 
 def render_item_photos(item) -> None:
-    images = ordered_images(item)
+    images = [
+        image
+        for image in ordered_images(item)
+        if (UPLOAD_DIR.parent / image.file_path).exists()
+    ]
     if not images:
         st.info("Esta pieza no tiene fotos.")
         st.caption("Foto generica del mineral")
@@ -59,7 +60,7 @@ def render_item_photos(item) -> None:
 st.title("Ficha de pieza")
 
 default_code = st.session_state.get("selected_item_code", "")
-item_code = st.text_input("ID de pieza", value=default_code, placeholder="Ej: MIN-0001")
+item_code = st.text_input("ID de pieza", value=default_code, placeholder="Ej: 12 o MIN-0012")
 
 db = get_session()
 try:

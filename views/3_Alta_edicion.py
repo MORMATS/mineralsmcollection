@@ -4,8 +4,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from src.auth import require_admin_access
-from src.db import get_session
+from src.db import get_session, UPLOAD_DIR
 from src.crud import generate_next_item_code
+from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
 
@@ -80,6 +81,43 @@ def item_label(item: CollectionItem) -> str:
     return f"{item.item_code} - {item.display_name or item.mineral.name}"
 
 
+def render_photo_order_editor(db, item: CollectionItem) -> None:
+    images = ordered_images(item)
+    if not images:
+        return
+
+    if any(image.sort_order != index or image.is_cover != (index == 1) for index, image in enumerate(images, 1)):
+        normalize_image_order(item)
+        db.commit()
+        images = ordered_images(item)
+
+    st.markdown("#### Orden de fotos")
+    for row_start in range(0, len(images), 4):
+        cols = st.columns(4)
+        for offset, image in enumerate(images[row_start : row_start + 4]):
+            index = row_start + offset
+            with cols[offset]:
+                image_path = UPLOAD_DIR.parent / image.file_path
+                if image_path.exists():
+                    st.image(str(image_path), use_container_width=True)
+                else:
+                    st.warning("Archivo no encontrado.")
+                st.caption(f"Foto {index + 1}{' - portada' if index == 0 else ''}")
+                up_col, down_col = st.columns(2)
+                if up_col.button("Subir", key=f"photo_up_{image.id}", disabled=index == 0):
+                    move_image(item, image.id, -1)
+                    db.commit()
+                    st.rerun()
+                if down_col.button(
+                    "Bajar",
+                    key=f"photo_down_{image.id}",
+                    disabled=index == len(images) - 1,
+                ):
+                    move_image(item, image.id, 1)
+                    db.commit()
+                    st.rerun()
+
+
 require_admin_access()
 
 st.title("Alta/edicion de pieza")
@@ -137,6 +175,7 @@ try:
         item = next(existing for existing in items if existing.item_code == selected_code)
         st.session_state["editing_item_code"] = item.item_code
         st.caption(f"Fotos actuales: {len(item.images)}. Puedes anadir mas fotos al guardar.")
+        render_photo_order_editor(db, item)
 
     next_item_code = generate_next_item_code(db)
     form_suffix = item.item_code if item else "new"
@@ -276,10 +315,18 @@ try:
                     sale_price,
                     notes,
                 )
-                had_cover = any(image.is_cover for image in item.images)
+                current_images = ordered_images(item)
                 saved_paths = save_uploaded_images(item.item_code, photos, start_index=len(item.images))
                 for i, path in enumerate(saved_paths):
-                    db.add(ItemImage(item=item, file_path=path, is_cover=(not had_cover and i == 0)))
+                    db.add(
+                        ItemImage(
+                            item=item,
+                            file_path=path,
+                            is_cover=False,
+                            sort_order=len(current_images) + i + 1,
+                        )
+                    )
+                normalize_image_order(item)
 
                 db.commit()
             except IntegrityError:
@@ -326,7 +373,14 @@ try:
 
                     saved_paths = save_uploaded_images(new_item.item_code, photos)
                     for i, path in enumerate(saved_paths):
-                        db.add(ItemImage(item=new_item, file_path=path, is_cover=(i == 0)))
+                        db.add(
+                            ItemImage(
+                                item=new_item,
+                                file_path=path,
+                                is_cover=(i == 0),
+                                sort_order=i + 1,
+                            )
+                        )
 
                     db.commit()
                     saved_item_code = new_item.item_code

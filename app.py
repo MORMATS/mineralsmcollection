@@ -7,15 +7,17 @@ from src.auth import admin_unlocked, render_admin_sidebar
 from src.db import get_session
 from src.models import CollectionItem, MineralSpecies
 from src.settings import is_production
+from src.ui import render_global_styles
 
 
-st.set_page_config(page_title="Catalogo de Minerales", page_icon=":gem:", layout="wide")
+st.set_page_config(page_title="Minerales", page_icon=":gem:", layout="wide")
+render_global_styles()
 logger = logging.getLogger(__name__)
 
 
 def home_page() -> None:
-    st.title("Catalogo / coleccion virtual de minerales")
-    st.caption("PostgreSQL en LXC Proxmox + Streamlit + Mindat API")
+    st.title("Catalogo de minerales")
+    st.caption("Coleccion y creaciones de Ismael Guessous. Para disfrutar y descubrir.")
 
     db = get_session()
     try:
@@ -26,31 +28,20 @@ def home_page() -> None:
         c1, c2, c3 = st.columns(3)
         c1.metric("Piezas en coleccion", total_items)
         c2.metric("Minerales de referencia", total_minerals)
-        c3.metric("Vendidas", sold_items)
+        c3.metric("Piezas vendidas", sold_items)
 
-        st.subheader("Busqueda rapida por ID")
-        item_code = st.text_input("ID / codigo de pieza", placeholder="Ej: MIN-0001")
+        st.subheader("Busqueda rapida")
+        item_code = st.text_input("ID / codigo de pieza", placeholder="Ej: 12 o MIN-0012")
         if st.button("Abrir ficha") and item_code:
             st.session_state["selected_item_code"] = item_code.strip()
             st.switch_page("views/2_Ficha.py")
-
-        if admin_unlocked():
-            st.info(
-                "Usa la barra lateral para ir a Coleccion, Ficha, Alta/edicion, "
-                "Wiki minerales, Admin datos o Importar API."
-            )
-        else:
-            st.info(
-                "Introduce la contrasena admin en la barra lateral para mostrar "
-                "Alta/edicion, Admin datos e Importar API."
-            )
     finally:
         db.close()
 
 
 public_pages = [
     st.Page(home_page, title="Inicio", icon=":material/home:", default=True),
-    st.Page("views/1_Coleccion.py", title="Coleccion", icon=":material/view_list:"),
+    st.Page("views/1_Coleccion.py", title="Coleccion", icon=":material/grid_view:"),
     st.Page("views/2_Ficha.py", title="Ficha", icon=":material/search:"),
     st.Page("views/6_Wiki_minerales.py", title="Wiki minerales", icon=":material/menu_book:"),
 ]

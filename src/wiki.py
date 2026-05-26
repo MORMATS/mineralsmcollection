@@ -113,6 +113,90 @@ RAW_LABELS = {
 }
 
 
+TERM_TRANSLATIONS = {
+    "adamantine": "adamantino",
+    "aggregate": "agregado",
+    "amorphous": "amorfo",
+    "black": "negro",
+    "blue": "azul",
+    "brown": "marron",
+    "carbonate": "carbonato",
+    "carbonates": "carbonatos",
+    "colorless": "incoloro",
+    "colourless": "incoloro",
+    "cubic": "cubico",
+    "dull": "mate",
+    "earthy": "terroso",
+    "fluorescent": "fluorescente",
+    "gray": "gris",
+    "green": "verde",
+    "grey": "gris",
+    "hexagonal": "hexagonal",
+    "isometric": "isometrico",
+    "metallic": "metalico",
+    "mineral": "mineral",
+    "monoclinic": "monoclinico",
+    "nonmetallic": "no metalico",
+    "opaque": "opaco",
+    "orange": "naranja",
+    "orthorhombic": "ortorrombico",
+    "oxide": "oxido",
+    "oxides": "oxidos",
+    "pearly": "nacarado",
+    "pink": "rosa",
+    "purple": "morado",
+    "red": "rojo",
+    "resinous": "resinoso",
+    "silicate": "silicato",
+    "silicates": "silicatos",
+    "sulfate": "sulfato",
+    "sulfates": "sulfatos",
+    "sulphate": "sulfato",
+    "sulphates": "sulfatos",
+    "tetragonal": "tetragonal",
+    "translucent": "traslucido",
+    "transparent": "transparente",
+    "triclinic": "triclinico",
+    "trigonal": "trigonal",
+    "vitreous": "vitreo",
+    "white": "blanco",
+    "yellow": "amarillo",
+}
+
+
+def translate_mindat_text(value: str) -> str:
+    text = value.strip()
+    if not text or len(text) > 220 or "://" in text:
+        return value
+
+    normalized = re.sub(r"\s+", " ", text.lower())
+    if normalized in TERM_TRANSLATIONS:
+        return TERM_TRANSLATIONS[normalized]
+
+    parts = re.split(r"([,;/()])", text)
+    changed = False
+    translated_parts = []
+    for part in parts:
+        key = re.sub(r"\s+", " ", part.strip().lower())
+        translated = TERM_TRANSLATIONS.get(key)
+        if translated:
+            prefix = part[: len(part) - len(part.lstrip())]
+            suffix = part[len(part.rstrip()) :]
+            translated_parts.append(f"{prefix}{translated}{suffix}")
+            changed = True
+        else:
+            translated_parts.append(part)
+
+    if changed:
+        return "".join(translated_parts)
+
+    result = text
+    for english, spanish in sorted(TERM_TRANSLATIONS.items(), key=lambda item: len(item[0]), reverse=True):
+        result = re.sub(rf"\b{re.escape(english)}\b", spanish, result, flags=re.IGNORECASE)
+
+    return result
+
+
 def load_mindat_raw(mineral: MineralSpecies) -> dict:
     if not mineral.api_raw_json:
         return {}
@@ -179,7 +263,7 @@ def format_value(value: Any) -> str:
 
 
 def first_text(raw: dict, *keys: str) -> str:
-    return format_value(raw_get(raw, *keys))
+    return translate_mindat_text(format_value(raw_get(raw, *keys)))
 
 
 def first_positive_number(raw: dict, *keys: str) -> float | None:
@@ -309,5 +393,5 @@ def extra_mindat_rows(mineral: MineralSpecies) -> list[tuple[str, str]]:
             continue
         formatted = format_value(value)
         if formatted:
-            rows.append((humanize_key(key), formatted))
+            rows.append((humanize_key(key), translate_mindat_text(formatted)))
     return rows

@@ -162,6 +162,44 @@ def render_global_styles() -> None:
             color: rgba(255, 255, 255, .82);
         }
 
+        .native-photo-placeholder {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            display: grid;
+            place-items: center;
+            border-radius: 8px;
+            background:
+                linear-gradient(135deg, rgba(73, 107, 90, .18), rgba(154, 109, 53, .16)),
+                #ded8c8;
+            color: var(--mineral-green);
+            font-size: 4rem;
+            font-weight: 700;
+        }
+
+        .native-photo-placeholder span {
+            color: var(--mineral-green);
+        }
+
+        .gallery-open-link {
+            display: block;
+            width: 100%;
+            margin-top: .45rem;
+            padding: .55rem .7rem;
+            border: 1px solid #cfc7b7;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .84);
+            color: var(--mineral-ink);
+            text-align: center;
+            font-weight: 650;
+            text-decoration: none;
+        }
+
+        .gallery-open-link:hover {
+            border-color: var(--mineral-green);
+            color: var(--mineral-green);
+            text-decoration: none;
+        }
+
         .admin-corner {
             display: inline-block;
             margin: .35rem 0 1rem;

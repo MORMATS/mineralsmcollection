@@ -2,7 +2,7 @@ import streamlit as st
 
 from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
-from src.crud import get_item_by_code
+from src.crud import get_item_by_code, normalize_item_code
 from src.item_images import ordered_images
 from src.wiki_view import render_generic_photo, render_mineral_wiki
 
@@ -59,8 +59,17 @@ def render_item_photos(item) -> None:
 
 st.title("Ficha de pieza")
 
-default_code = st.session_state.get("selected_item_code", "")
-item_code = st.text_input("ID de pieza", value=default_code, placeholder="Ej: 12 o MIN-0012")
+query_code = st.query_params.get("pieza")
+default_code = normalize_item_code(query_code) if query_code else st.session_state.get("selected_item_code", "")
+with st.form("item_lookup"):
+    typed_code = st.text_input("ID de pieza", value=default_code, placeholder="Ej: 1 o MIN-0001")
+    lookup_submitted = st.form_submit_button("Buscar")
+
+if lookup_submitted and typed_code:
+    st.session_state["selected_item_code"] = normalize_item_code(typed_code)
+    st.rerun()
+
+item_code = normalize_item_code(query_code or st.session_state.get("selected_item_code", typed_code))
 
 db = get_session()
 try:

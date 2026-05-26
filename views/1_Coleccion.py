@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import base64
-import html
-from io import BytesIO
 from pathlib import Path
+import html
 from urllib.parse import quote
 
-from PIL import Image, UnidentifiedImageError
 import streamlit as st
 
 from src.auth import admin_unlocked
@@ -15,97 +12,50 @@ from src.crud import list_collection_items, option_lists
 from src.item_images import ordered_images
 
 
-THUMBNAIL_SIZE = (680, 680)
+def cover_image_path(item) -> Path | None:
+    for image in ordered_images(item):
+        path = UPLOAD_DIR.parent / image.file_path
+        if path.exists():
+            return path
+    return None
 
 
-@st.cache_data(show_spinner=False)
-def photo_data_uri(path_text: str, mtime: float) -> str:
-    path = Path(path_text)
-    if not path.exists():
-        return ""
-
-    try:
-        with Image.open(path) as image:
-            image.thumbnail(THUMBNAIL_SIZE)
-            if image.mode not in ("RGB", "RGBA"):
-                image = image.convert("RGB")
-            buffer = BytesIO()
-            image.save(buffer, format="WEBP", quality=82, method=6)
-    except (OSError, UnidentifiedImageError):
-        return ""
-
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/webp;base64,{encoded}"
+def item_label(item) -> str:
+    return item.display_name or item.mineral.name
 
 
-def cover_image(item):
-    images = ordered_images(item)
-    return images[0] if images else None
-
-
-def cover_uri(item) -> str:
-    image = cover_image(item)
-    if not image:
-        return ""
-    path = UPLOAD_DIR.parent / image.file_path
-    try:
-        mtime = path.stat().st_mtime
-    except OSError:
-        return ""
-    return photo_data_uri(str(path), mtime)
-
-
-def item_location(item) -> str:
-    if not item.locality:
-        return ""
-    return ", ".join(
-        value
-        for value in [item.locality.mine, item.locality.region, item.locality.country]
-        if value
+def render_placeholder(item) -> None:
+    initial = (item.mineral.name or "?")[:1].upper()
+    st.markdown(
+        f"""
+        <div class="native-photo-placeholder">
+            <span>{initial}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
 def render_gallery(items) -> None:
-    cards = []
-    for item in items:
-        title = item.display_name or item.mineral.name
-        location = item_location(item)
-        badge = "Vendido" if item.sold else item.item_code
-        image_uri = cover_uri(item)
-        href = f"?pieza={quote(item.item_code)}"
-        label = html.escape(f"{item.item_code} - {title}")
+    for row_start in range(0, len(items), 4):
+        cols = st.columns(4)
+        for offset, item in enumerate(items[row_start : row_start + 4]):
+            with cols[offset]:
+                cover_path = cover_image_path(item)
+                if cover_path:
+                    st.image(str(cover_path), use_container_width=True)
+                else:
+                    render_placeholder(item)
 
-        if image_uri:
-            media = f'<img src="{image_uri}" alt="{label}" loading="lazy">'
-        else:
-            media = (
-                '<div class="collection-placeholder">'
-                f"<span>{html.escape(item.mineral.name[:1].upper())}</span>"
-                "</div>"
-            )
+                st.markdown(
+                    (
+                        f'<a class="gallery-open-link" href="/Ficha?pieza={quote(item.item_code)}" '
+                        f'target="_self">{html.escape(item_label(item))}</a>'
+                    ),
+                    unsafe_allow_html=True,
+                )
 
-        cards.append(
-            f"""
-            <a class="collection-card" href="{href}" target="_self" aria-label="{label}">
-                <span class="collection-photo">{media}</span>
-                <span class="collection-overlay">
-                    <span class="collection-badge">{html.escape(badge)}</span>
-                    <span class="collection-title">{html.escape(title)}</span>
-                    <span class="collection-meta">{html.escape(item.mineral.name)}</span>
-                    <span class="collection-meta">{html.escape(location)}</span>
-                </span>
-            </a>
-            """
-        )
-
-    st.markdown('<div class="collection-grid">' + "\n".join(cards) + "</div>", unsafe_allow_html=True)
-
-
-selected_from_gallery = st.query_params.get("pieza")
-if selected_from_gallery:
-    st.session_state["selected_item_code"] = selected_from_gallery
-    st.query_params.clear()
-    st.switch_page("views/2_Ficha.py")
+                st.caption(f"{item.item_code} · {item.mineral.name}")
 
 
 st.title("Coleccion completa")
@@ -116,7 +66,7 @@ try:
 
     with st.sidebar:
         st.header("Filtros")
-        text = st.text_input("Buscar texto o ID", placeholder="Ej: 12, MIN-0012 o cuarzo")
+        text = st.text_input("Buscar texto o ID", placeholder="Ej: 1, MIN-0001 o cuarzo")
         sold_filter = st.selectbox("Estado venta", ["Todos", "Disponible", "Vendido"])
         mineral = st.selectbox("Mineral", opts["minerals"])
         country = st.selectbox("Ubicacion / pais", opts["countries"])
@@ -150,7 +100,7 @@ try:
             "Pieza",
             [item.item_code for item in items],
             format_func=lambda code: next(
-                f"{item.item_code} - {item.display_name or item.mineral.name}"
+                f"{item.item_code} - {item_label(item)}"
                 for item in items
                 if item.item_code == code
             ),

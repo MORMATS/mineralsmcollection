@@ -1,11 +1,11 @@
 import streamlit as st
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import joinedload
 
 from src.auth import require_admin_access
 from src.db import get_session, UPLOAD_DIR
-from src.crud import generate_next_item_code
+from src.crud import delete_collection_item, generate_next_item_code
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
@@ -82,6 +82,37 @@ def item_label(item: CollectionItem) -> str:
     return f"{item.item_code} - {item.display_name or item.mineral.name}"
 
 
+def render_delete_item_panel(db, item: CollectionItem) -> None:
+    with st.expander("Borrar pieza / anuncio"):
+        st.warning("Esta accion borra la pieza de la base de datos y elimina sus fotos guardadas.")
+        confirm = st.checkbox(
+            f"Confirmo que quiero borrar {item.item_code}",
+            key=f"delete_confirm_{item.id}",
+        )
+        if st.button(
+            "Borrar pieza y fotos",
+            disabled=not confirm,
+            key=f"delete_item_{item.id}",
+        ):
+            item_code = item.item_code
+            try:
+                deleted_count, delete_errors = delete_collection_item(db, item)
+            except SQLAlchemyError:
+                db.rollback()
+                st.error("No se pudo borrar la pieza.")
+                st.stop()
+
+            st.session_state.pop("editing_item_code", None)
+            if st.session_state.get("selected_item_code") == item_code:
+                st.session_state.pop("selected_item_code", None)
+            st.session_state["item_deleted_message"] = (
+                f"Pieza {item_code} borrada. Fotos eliminadas: {deleted_count}."
+            )
+            if delete_errors:
+                st.session_state["item_delete_warnings"] = delete_errors
+            st.rerun()
+
+
 def render_photo_order_editor(db, item: CollectionItem) -> None:
     images = ordered_images(item)
     if not images:
@@ -129,6 +160,11 @@ require_admin_access()
 
 st.title("Alta/edicion de pieza")
 st.caption("Crea piezas nuevas o carga una pieza existente para modificar sus datos.")
+
+if deleted_message := st.session_state.pop("item_deleted_message", None):
+    st.success(deleted_message)
+if delete_warnings := st.session_state.pop("item_delete_warnings", None):
+    st.warning("La pieza se borro, pero algunas fotos no se pudieron eliminar:\n" + "\n".join(delete_warnings))
 
 db = get_session()
 try:
@@ -293,6 +329,9 @@ try:
         )
 
         submitted = st.form_submit_button("Guardar cambios" if editing else "Guardar pieza")
+
+    if editing and item:
+        render_delete_item_panel(db, item)
 
     if submitted:
         mineral = mineral_by_name[mineral_name]

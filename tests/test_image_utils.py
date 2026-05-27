@@ -47,3 +47,15 @@ def test_save_uploaded_images_rejects_corrupt_file(monkeypatch, tmp_path):
         assert "no es una imagen valida" in str(exc)
     else:
         raise AssertionError("Expected corrupt file to be rejected")
+
+
+def test_delete_uploaded_images_rejects_paths_outside_upload_root(monkeypatch, tmp_path):
+    monkeypatch.setattr(image_utils, "UPLOAD_DIR", tmp_path / "uploads")
+    outside_file = tmp_path / "outside.webp"
+    outside_file.write_bytes(b"fake image")
+
+    deleted_count, failures = image_utils.delete_uploaded_images([str(outside_file)])
+
+    assert deleted_count == 0
+    assert failures
+    assert outside_file.exists()

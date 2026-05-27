@@ -5,6 +5,7 @@ import re
 from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload, Session
 
+from src.image_utils import delete_uploaded_images
 from src.models import CollectionItem, MineralSpecies, Locality, Chakra
 
 
@@ -113,6 +114,13 @@ def get_item_by_code(db: Session, item_code: str):
         .where(CollectionItem.item_code == normalized_code)
     )
     return db.execute(stmt).unique().scalar_one_or_none()
+
+
+def delete_collection_item(db: Session, item: CollectionItem) -> tuple[int, list[str]]:
+    image_paths = [image.file_path for image in list(item.images)]
+    db.delete(item)
+    db.commit()
+    return delete_uploaded_images(image_paths)
 
 
 def option_lists(db: Session) -> dict:

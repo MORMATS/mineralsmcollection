@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from io import BytesIO
 import re
 from pathlib import Path
@@ -29,6 +30,51 @@ def safe_slug(value: str) -> str:
     value = re.sub(r"[^a-z0-9_-]+", "-", value)
     value = re.sub(r"-+", "-", value).strip("-")
     return value or "item"
+
+
+def resolve_uploaded_path(file_path: str) -> Path | None:
+    storage_root = UPLOAD_DIR.parent.resolve()
+    upload_root = UPLOAD_DIR.resolve()
+    path = (storage_root / file_path).resolve()
+    try:
+        path.relative_to(upload_root)
+    except ValueError:
+        return None
+    return path
+
+
+def delete_uploaded_images(file_paths: Iterable[str]) -> tuple[int, list[str]]:
+    deleted_count = 0
+    failures: list[str] = []
+    parent_dirs: set[Path] = set()
+    upload_root = UPLOAD_DIR.resolve()
+
+    for file_path in file_paths:
+        path = resolve_uploaded_path(file_path)
+        if path is None:
+            failures.append(f"{file_path}: ruta fuera de la carpeta de subidas")
+            continue
+
+        parent_dirs.add(path.parent)
+        try:
+            if path.exists():
+                path.unlink()
+                deleted_count += 1
+        except OSError as exc:
+            failures.append(f"{file_path}: {exc}")
+
+    for parent_dir in sorted(parent_dirs, key=lambda path: len(path.parts), reverse=True):
+        try:
+            parent_dir.relative_to(upload_root)
+        except ValueError:
+            continue
+
+        try:
+            parent_dir.rmdir()
+        except OSError:
+            pass
+
+    return deleted_count, failures
 
 
 def save_uploaded_images(item_code: str, uploaded_files, start_index: int = 0) -> list[str]:

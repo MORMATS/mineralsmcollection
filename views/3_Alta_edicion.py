@@ -9,7 +9,7 @@ from src.crud import delete_collection_item, generate_next_item_code
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
-from src.ui import max_image_height_ratio, render_stable_photo
+from src.ui import render_stable_photo, shared_image_frame_ratio
 
 
 def clean_text(value: str | None) -> str | None:
@@ -128,7 +128,7 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
 
     st.markdown("#### Orden de fotos")
     image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
-    photo_frame_ratio = max_image_height_ratio(image_paths)
+    photo_frame_ratio = shared_image_frame_ratio(image_paths)
 
     for row_start in range(0, len(images), 4):
         cols = st.columns(4)

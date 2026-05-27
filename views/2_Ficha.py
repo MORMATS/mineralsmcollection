@@ -4,7 +4,7 @@ from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import get_item_by_code, normalize_item_code
 from src.item_images import ordered_images
-from src.ui import max_image_height_ratio, render_stable_photo
+from src.ui import render_stable_photo, shared_image_frame_ratio
 from src.wiki_view import render_generic_photo, render_mineral_wiki
 
 
@@ -84,7 +84,7 @@ def render_item_photos(item) -> None:
         if (UPLOAD_DIR.parent / image.file_path).exists()
     ]
     image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
-    photo_frame_ratio = max_image_height_ratio(image_paths)
+    photo_frame_ratio = shared_image_frame_ratio(image_paths)
 
     if not images:
         st.info("Esta pieza no tiene fotos.")

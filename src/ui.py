@@ -4,6 +4,7 @@ import base64
 import html
 import mimetypes
 from pathlib import Path
+from statistics import median
 
 import streamlit as st
 from PIL import Image, UnidentifiedImageError
@@ -216,26 +217,6 @@ def render_global_styles() -> None:
             line-height: 1.3;
         }
 
-        .gallery-open-link {
-            display: block;
-            width: 100%;
-            margin-top: .45rem;
-            padding: .55rem .7rem;
-            border: 1px solid #cfc7b7;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, .84);
-            color: var(--mineral-ink);
-            text-align: center;
-            font-weight: 650;
-            text-decoration: none;
-        }
-
-        .gallery-open-link:hover {
-            border-color: var(--mineral-green);
-            color: var(--mineral-green);
-            text-decoration: none;
-        }
-
         .admin-corner {
             position: fixed;
             left: .8rem;
@@ -279,6 +260,20 @@ def image_height_ratio(path: Path) -> float | None:
 def max_image_height_ratio(paths: list[Path], default: float = 1.0) -> float:
     ratios = [ratio for path in paths if (ratio := image_height_ratio(path))]
     return max(ratios, default=default)
+
+
+def shared_image_frame_ratio(
+    paths: list[Path],
+    default: float = 1.0,
+    min_ratio: float = 0.75,
+    max_ratio: float = 1.35,
+) -> float:
+    ratios = [ratio for path in paths if (ratio := image_height_ratio(path))]
+    if not ratios:
+        return default
+
+    baseline = float(median(ratios))
+    return min(max(baseline, min_ratio), max_ratio)
 
 
 @st.cache_data(show_spinner=False)

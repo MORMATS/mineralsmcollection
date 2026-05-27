@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import html
-from urllib.parse import quote
 
 import streamlit as st
 
@@ -10,7 +8,7 @@ from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import list_collection_items, option_lists
 from src.item_images import ordered_images
-from src.ui import max_image_height_ratio, render_stable_photo
+from src.ui import render_stable_photo, shared_image_frame_ratio
 
 
 def cover_image_path(item) -> Path | None:
@@ -40,7 +38,7 @@ def render_placeholder(item, frame_ratio: float = 1.0) -> None:
 def render_gallery(items) -> None:
     item_covers = [(item, cover_image_path(item)) for item in items]
     cover_paths = [path for _, path in item_covers if path]
-    photo_frame_ratio = max_image_height_ratio(cover_paths)
+    photo_frame_ratio = shared_image_frame_ratio(cover_paths)
 
     for row_start in range(0, len(item_covers), 4):
         cols = st.columns(4)
@@ -51,13 +49,14 @@ def render_gallery(items) -> None:
                 else:
                     render_placeholder(item, photo_frame_ratio)
 
-                st.markdown(
-                    (
-                        f'<a class="gallery-open-link" href="/Ficha?pieza={quote(item.item_code)}" '
-                        f'target="_self">{html.escape(item_label(item))}</a>'
-                    ),
-                    unsafe_allow_html=True,
-                )
+                if st.button(
+                    item_label(item),
+                    key=f"open_item_{item.id}",
+                    use_container_width=True,
+                ):
+                    st.session_state["selected_item_code"] = item.item_code
+                    st.query_params.clear()
+                    st.switch_page("views/2_Ficha.py")
 
                 st.caption(f"{item.item_code} · {item.mineral.name}")
 

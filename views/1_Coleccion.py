@@ -10,6 +10,7 @@ from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import list_collection_items, option_lists
 from src.item_images import ordered_images
+from src.ui import max_image_height_ratio, render_stable_photo
 
 
 def cover_image_path(item) -> Path | None:
@@ -24,11 +25,11 @@ def item_label(item) -> str:
     return item.display_name or item.mineral.name
 
 
-def render_placeholder(item) -> None:
+def render_placeholder(item, frame_ratio: float = 1.0) -> None:
     initial = (item.mineral.name or "?")[:1].upper()
     st.markdown(
         f"""
-        <div class="native-photo-placeholder">
+        <div class="native-photo-placeholder" style="--photo-frame-ratio: {frame_ratio:.6f};">
             <span>{initial}</span>
         </div>
         """,
@@ -37,15 +38,18 @@ def render_placeholder(item) -> None:
 
 
 def render_gallery(items) -> None:
-    for row_start in range(0, len(items), 4):
+    item_covers = [(item, cover_image_path(item)) for item in items]
+    cover_paths = [path for _, path in item_covers if path]
+    photo_frame_ratio = max_image_height_ratio(cover_paths)
+
+    for row_start in range(0, len(item_covers), 4):
         cols = st.columns(4)
-        for offset, item in enumerate(items[row_start : row_start + 4]):
+        for offset, (item, cover_path) in enumerate(item_covers[row_start : row_start + 4]):
             with cols[offset]:
-                cover_path = cover_image_path(item)
                 if cover_path:
-                    st.image(str(cover_path), width="stretch")
+                    render_stable_photo(cover_path, photo_frame_ratio)
                 else:
-                    render_placeholder(item)
+                    render_placeholder(item, photo_frame_ratio)
 
                 st.markdown(
                     (

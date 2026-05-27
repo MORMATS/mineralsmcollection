@@ -9,6 +9,7 @@ from src.crud import generate_next_item_code
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
+from src.ui import max_image_height_ratio, render_stable_photo
 
 
 def clean_text(value: str | None) -> str | None:
@@ -95,6 +96,9 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
         images = ordered_images(item)
 
     st.markdown("#### Orden de fotos")
+    image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
+    photo_frame_ratio = max_image_height_ratio(image_paths)
+
     for row_start in range(0, len(images), 4):
         cols = st.columns(4)
         for offset, image in enumerate(images[row_start : row_start + 4]):
@@ -102,7 +106,7 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
             with cols[offset]:
                 image_path = UPLOAD_DIR.parent / image.file_path
                 if image_path.exists():
-                    st.image(str(image_path), width="stretch")
+                    render_stable_photo(image_path, photo_frame_ratio)
                 else:
                     st.warning("Archivo no encontrado.")
                 st.caption(f"Foto {index + 1}{' - portada' if index == 0 else ''}")

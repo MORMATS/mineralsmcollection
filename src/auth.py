@@ -71,11 +71,10 @@ def render_admin_sidebar() -> None:
     login_requested = st.query_params.get("admin") == "1"
 
     if not admin_unlocked() and not login_requested:
-        with st.sidebar:
-            st.markdown(
-                '<a class="admin-corner" href="?admin=1" target="_self">Admin</a>',
-                unsafe_allow_html=True,
-            )
+        st.markdown(
+            '<a class="admin-corner" href="?admin=1" target="_self">Admin</a>',
+            unsafe_allow_html=True,
+        )
         return
 
     with st.sidebar:

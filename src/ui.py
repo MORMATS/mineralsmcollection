@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import base64
+import html
+import mimetypes
+from pathlib import Path
+
 import streamlit as st
+from PIL import Image, UnidentifiedImageError
 
 
 def render_global_styles() -> None:
@@ -164,7 +170,7 @@ def render_global_styles() -> None:
 
         .native-photo-placeholder {
             width: 100%;
-            aspect-ratio: 1 / 1;
+            aspect-ratio: 1 / var(--photo-frame-ratio, 1);
             display: grid;
             place-items: center;
             border-radius: 8px;
@@ -178,6 +184,36 @@ def render_global_styles() -> None:
 
         .native-photo-placeholder span {
             color: var(--mineral-green);
+        }
+
+        .stable-photo-frame {
+            width: 100%;
+            margin: 0;
+        }
+
+        .stable-photo-stage {
+            width: 100%;
+            aspect-ratio: 1 / var(--photo-frame-ratio, 1);
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            border-radius: 8px;
+            border: 1px solid rgba(35, 48, 42, .12);
+            background: rgba(255, 255, 255, .66);
+        }
+
+        .stable-photo-stage img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .stable-photo-caption {
+            margin-top: .35rem;
+            color: var(--mineral-muted);
+            font-size: .82rem;
+            line-height: 1.3;
         }
 
         .gallery-open-link {
@@ -201,8 +237,13 @@ def render_global_styles() -> None:
         }
 
         .admin-corner {
-            display: inline-block;
-            margin: .35rem 0 1rem;
+            position: fixed;
+            left: .8rem;
+            bottom: .8rem;
+            z-index: 1000;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             padding: .22rem .45rem;
             border-radius: 6px;
             color: rgba(35, 48, 42, .56);
@@ -218,6 +259,61 @@ def render_global_styles() -> None:
             border-color: rgba(73, 107, 90, .42);
         }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def image_height_ratio(path: Path) -> float | None:
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+    except (FileNotFoundError, OSError, UnidentifiedImageError):
+        return None
+
+    if width <= 0 or height <= 0:
+        return None
+    return height / width
+
+
+def max_image_height_ratio(paths: list[Path], default: float = 1.0) -> float:
+    ratios = [ratio for path in paths if (ratio := image_height_ratio(path))]
+    return max(ratios, default=default)
+
+
+@st.cache_data(show_spinner=False)
+def _image_data_uri(path_text: str, mtime_ns: int) -> str | None:
+    path = Path(path_text)
+    if not path.exists():
+        return None
+
+    mime_type = mimetypes.guess_type(path.name)[0] or "image/webp"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def render_stable_photo(path: Path, frame_ratio: float, caption: str | None = None) -> None:
+    if not path.exists():
+        st.warning("Archivo no encontrado.")
+        return
+
+    data_uri = _image_data_uri(str(path), path.stat().st_mtime_ns)
+    if not data_uri:
+        st.warning("Archivo no encontrado.")
+        return
+
+    caption_html = ""
+    if caption:
+        caption_html = f'<figcaption class="stable-photo-caption">{html.escape(caption)}</figcaption>'
+
+    st.markdown(
+        f"""
+        <figure class="stable-photo-frame" style="--photo-frame-ratio: {frame_ratio:.6f};">
+            <div class="stable-photo-stage">
+                <img src="{data_uri}" alt="{html.escape(caption or path.name)}">
+            </div>
+            {caption_html}
+        </figure>
         """,
         unsafe_allow_html=True,
     )

@@ -4,6 +4,7 @@ from src.auth import admin_unlocked
 from src.db import get_session, UPLOAD_DIR
 from src.crud import get_item_by_code, normalize_item_code
 from src.item_images import ordered_images
+from src.ui import max_image_height_ratio, render_stable_photo
 from src.wiki_view import render_generic_photo, render_mineral_wiki
 
 
@@ -12,12 +13,79 @@ def move_photo(key: str, count: int, delta: int) -> None:
     st.session_state[key] = (current + delta) % count
 
 
+def clean_display(value) -> str:
+    if value is None:
+        return ""
+    value = str(value).strip()
+    return value
+
+
+def visible_rows(rows: list[tuple[str, object]]) -> list[tuple[str, str]]:
+    result = []
+    for label, value in rows:
+        display_value = clean_display(value)
+        if display_value:
+            result.append((label, display_value))
+    return result
+
+
+def render_visible_section(title: str, rows: list[tuple[str, str]]) -> None:
+    st.markdown(f"#### {title}")
+    for label, value in rows:
+        st.write(f"**{label}:** {value}")
+
+
+def render_optional_section(title: str, rows: list[tuple[str, object]]) -> bool:
+    visible = visible_rows(rows)
+    if not visible:
+        return False
+
+    render_visible_section(title, visible)
+    return True
+
+
+def render_item_details(item) -> bool:
+    sections = []
+    if item.locality:
+        locality_rows = visible_rows(
+            [
+                ("Nombre", item.locality.name),
+                ("Mina", item.locality.mine),
+                ("Region", item.locality.region),
+                ("Pais", item.locality.country),
+            ]
+        )
+        if locality_rows:
+            sections.append(("Localidad", locality_rows))
+
+    index_rows = visible_rows(
+        [
+            ("Caracteristicas especiales", item.special_features),
+            ("Minerales secundarios", item.secondary_minerals),
+            ("Notas", item.notes),
+        ]
+    )
+    if index_rows:
+        sections.append(("Datos de indice", index_rows))
+
+    if not sections:
+        return False
+
+    st.subheader("Datos de pieza")
+    for title, rows in sections:
+        render_visible_section(title, rows)
+    return True
+
+
 def render_item_photos(item) -> None:
     images = [
         image
         for image in ordered_images(item)
         if (UPLOAD_DIR.parent / image.file_path).exists()
     ]
+    image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
+    photo_frame_ratio = max_image_height_ratio(image_paths)
+
     if not images:
         st.info("Esta pieza no tiene fotos.")
         st.caption("Foto generica del mineral")
@@ -33,7 +101,11 @@ def render_item_photos(item) -> None:
     st.session_state[state_key] = current
 
     image = images[current]
-    st.image(str(UPLOAD_DIR.parent / image.file_path), caption=image.caption, width="stretch")
+    render_stable_photo(
+        UPLOAD_DIR.parent / image.file_path,
+        photo_frame_ratio,
+        caption=image.caption,
+    )
 
     if len(images) == 1:
         st.caption("Foto 1 de 1")
@@ -100,27 +172,19 @@ try:
                 render_item_photos(item)
 
             with right:
-                st.subheader("Datos de pieza")
-                if item.locality:
-                    st.markdown("#### Localidad")
-                    st.write(f"**Nombre:** {item.locality.name or '-'}")
-                    st.write(f"**Mina:** {item.locality.mine or '-'}")
-                    st.write(f"**Region:** {item.locality.region or '-'}")
-                    st.write(f"**Pais:** {item.locality.country or '-'}")
-
-                st.markdown("#### Datos de indice")
-                st.write(f"**Caracteristicas especiales:** {item.special_features or '-'}")
-                st.write(f"**Minerales secundarios:** {item.secondary_minerals or '-'}")
-                st.write(f"**Notas:** {item.notes or '-'}")
+                render_item_details(item)
 
         with wiki_tab:
             chakra_names = ", ".join(c.name for c in item.mineral.chakras)
             zodiac_names = ", ".join(z.name for z in item.mineral.zodiac_signs)
             render_mineral_wiki(item.mineral)
-            if chakra_names or zodiac_names:
-                st.markdown("#### Asociaciones personales")
-                st.write(f"**Chakras:** {chakra_names or '-'}")
-                st.write(f"**Zodiaco:** {zodiac_names or '-'}")
+            render_optional_section(
+                "Asociaciones personales",
+                [
+                    ("Chakras", chakra_names),
+                    ("Zodiaco", zodiac_names),
+                ],
+            )
     else:
         st.info("Introduce un ID para buscar una pieza.")
 finally:

@@ -60,6 +60,12 @@ sudo APP_DIR=/opt/isminerals/app bash /opt/isminerals/app/scripts/deploy_lxc.sh
 ```
 
 El script hace `git pull`, instala dependencias, ejecuta Alembic y reinicia `isminerals.service`.
+Si no pasas `APP_DIR`, intenta leer el `WorkingDirectory` real del servicio systemd y lo usa como ruta de la app. Para confirmar que estas actualizando la misma ruta que ejecuta el servicio:
+
+```bash
+systemctl show isminerals --property=WorkingDirectory --value
+systemctl cat isminerals
+```
 
 ## 5. Cloudflare Tunnel
 

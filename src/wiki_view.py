@@ -32,7 +32,7 @@ def render_generic_photo(mineral_name: str) -> None:
         st.info("No he encontrado una foto generica libre para este mineral.")
         return
 
-    st.image(image["thumbnail_url"], caption=image["caption"], use_container_width=True)
+    st.image(image["thumbnail_url"], caption=image["caption"], width="stretch")
     st.link_button("Ver imagen y licencia", image["page_url"])
 
 

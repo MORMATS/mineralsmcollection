@@ -86,7 +86,10 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
     if not images:
         return
 
-    if any(image.sort_order != index or image.is_cover != (index == 1) for index, image in enumerate(images, 1)):
+    if any(
+        getattr(image, "sort_order", None) != index or image.is_cover != (index == 1)
+        for index, image in enumerate(images, 1)
+    ):
         normalize_image_order(item)
         db.commit()
         images = ordered_images(item)
@@ -99,7 +102,7 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
             with cols[offset]:
                 image_path = UPLOAD_DIR.parent / image.file_path
                 if image_path.exists():
-                    st.image(str(image_path), use_container_width=True)
+                    st.image(str(image_path), width="stretch")
                 else:
                     st.warning("Archivo no encontrado.")
                 st.caption(f"Foto {index + 1}{' - portada' if index == 0 else ''}")

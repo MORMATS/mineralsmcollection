@@ -33,7 +33,7 @@ def render_item_photos(item) -> None:
     st.session_state[state_key] = current
 
     image = images[current]
-    st.image(str(UPLOAD_DIR.parent / image.file_path), caption=image.caption, use_container_width=True)
+    st.image(str(UPLOAD_DIR.parent / image.file_path), caption=image.caption, width="stretch")
 
     if len(images) == 1:
         st.caption("Foto 1 de 1")

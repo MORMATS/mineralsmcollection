@@ -5,7 +5,8 @@ from src.models import CollectionItem, ItemImage
 
 def image_sort_key(image: ItemImage) -> tuple[int, int]:
     fallback = image.id or 0
-    return (image.sort_order if image.sort_order is not None else fallback, fallback)
+    sort_order = getattr(image, "sort_order", None)
+    return (sort_order if sort_order is not None else fallback, fallback)
 
 
 def ordered_images(item: CollectionItem) -> list[ItemImage]:
@@ -14,7 +15,8 @@ def ordered_images(item: CollectionItem) -> list[ItemImage]:
 
 def assign_image_order(images: list[ItemImage]) -> None:
     for index, image in enumerate(images, start=1):
-        image.sort_order = index
+        if hasattr(image, "sort_order"):
+            image.sort_order = index
         image.is_cover = index == 1
 
 

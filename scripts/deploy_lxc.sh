@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/opt/minerales/app}"
-VENV_DIR="${VENV_DIR:-${APP_DIR}/.venv}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 SERVICE_NAME="${SERVICE_NAME:-isminerals}"
+
+if [ -z "${APP_DIR:-}" ]; then
+  SERVICE_APP_DIR="$(systemctl show "$SERVICE_NAME" --property=WorkingDirectory --value 2>/dev/null || true)"
+  APP_DIR="${SERVICE_APP_DIR:-/opt/isminerals/app}"
+fi
+
+VENV_DIR="${VENV_DIR:-${APP_DIR}/.venv}"
 
 cd "$APP_DIR"
 

@@ -43,7 +43,7 @@ def render_gallery(items) -> None:
             with cols[offset]:
                 cover_path = cover_image_path(item)
                 if cover_path:
-                    st.image(str(cover_path), use_container_width=True)
+                    st.image(str(cover_path), width="stretch")
                 else:
                     render_placeholder(item)
 

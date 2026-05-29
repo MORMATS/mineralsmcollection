@@ -1,6 +1,31 @@
 from PIL import Image
 
-from src.ui import image_height_ratio, max_image_height_ratio, shared_image_frame_ratio
+from src.ui import (
+    escape_html,
+    image_height_ratio,
+    max_image_height_ratio,
+    mineral_initial,
+    shared_image_frame_ratio,
+    status_class,
+    status_label,
+)
+
+
+def test_escape_html_strips_and_escapes_user_text():
+    assert escape_html("  Quartz <script>  ") == "Quartz &lt;script&gt;"
+    assert escape_html(0) == "0"
+
+
+def test_mineral_initial_uses_first_alphanumeric_character():
+    assert mineral_initial("  - Amethyst") == "A"
+    assert mineral_initial("") == "?"
+
+
+def test_status_helpers_return_public_labels_and_classes():
+    assert status_label(False) == "Disponible"
+    assert status_label(True) == "Vendido"
+    assert status_class(False) == "is-available"
+    assert status_class(True) == "is-sold"
 
 
 def test_image_height_ratio_reads_image_dimensions(tmp_path):

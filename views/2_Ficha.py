@@ -1,10 +1,18 @@
 import streamlit as st
 
 from src.auth import admin_unlocked
-from src.db import get_session, UPLOAD_DIR
 from src.crud import get_item_by_code, normalize_item_code
+from src.db import UPLOAD_DIR, get_session
 from src.item_images import ordered_images
-from src.ui import render_stable_photo, shared_image_frame_ratio
+from src.ui import (
+    render_detail_grid,
+    render_metric_cards,
+    render_page_header,
+    render_section_heading,
+    render_stable_photo,
+    shared_image_frame_ratio,
+    status_label,
+)
 from src.wiki_view import render_generic_photo, render_mineral_wiki
 
 
@@ -16,8 +24,7 @@ def move_photo(key: str, count: int, delta: int) -> None:
 def clean_display(value) -> str:
     if value is None:
         return ""
-    value = str(value).strip()
-    return value
+    return str(value).strip()
 
 
 def visible_rows(rows: list[tuple[str, object]]) -> list[tuple[str, str]]:
@@ -31,8 +38,7 @@ def visible_rows(rows: list[tuple[str, object]]) -> list[tuple[str, str]]:
 
 def render_visible_section(title: str, rows: list[tuple[str, str]]) -> None:
     st.markdown(f"#### {title}")
-    for label, value in rows:
-        st.write(f"**{label}:** {value}")
+    render_detail_grid(rows)
 
 
 def render_optional_section(title: str, rows: list[tuple[str, object]]) -> bool:
@@ -49,46 +55,50 @@ def render_item_details(item) -> bool:
     if item.locality:
         locality_rows = visible_rows(
             [
-                ("Nombre", item.locality.name),
-                ("Mina", item.locality.mine),
-                ("Region", item.locality.region),
-                ("Pais", item.locality.country),
+                ("Localidad", item.locality.name),
+                ("Mina / yacimiento", item.locality.mine),
+                ("Región", item.locality.region),
+                ("País", item.locality.country),
             ]
         )
         if locality_rows:
-            sections.append(("Localidad", locality_rows))
+            sections.append(("Origen", locality_rows))
 
     index_rows = visible_rows(
         [
-            ("Caracteristicas especiales", item.special_features),
+            ("Características especiales", item.special_features),
             ("Minerales secundarios", item.secondary_minerals),
             ("Notas", item.notes),
         ]
     )
     if index_rows:
-        sections.append(("Datos de indice", index_rows))
+        sections.append(("Datos de índice", index_rows))
 
     if not sections:
+        st.info("Esta pieza todavía no tiene datos descriptivos adicionales.")
         return False
 
-    st.subheader("Datos de pieza")
     for title, rows in sections:
         render_visible_section(title, rows)
     return True
 
 
-def render_item_photos(item) -> None:
-    images = [
+def existing_item_images(item):
+    return [
         image
         for image in ordered_images(item)
         if (UPLOAD_DIR.parent / image.file_path).exists()
     ]
+
+
+def render_item_photos(item) -> None:
+    images = existing_item_images(item)
     image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
     photo_frame_ratio = shared_image_frame_ratio(image_paths)
 
     if not images:
-        st.info("Esta pieza no tiene fotos.")
-        st.caption("Foto generica del mineral")
+        st.info("Esta pieza no tiene fotos locales disponibles.")
+        st.caption("Foto genérica del mineral")
         render_generic_photo(item.mineral.name)
         return
 
@@ -113,29 +123,57 @@ def render_item_photos(item) -> None:
 
     previous_col, count_col, next_col = st.columns([1, 2, 1])
     previous_col.button(
-        "<",
+        "Anterior",
         key=f"{state_key}_previous",
         help="Foto anterior",
         on_click=move_photo,
         args=(state_key, len(images), -1),
+        use_container_width=True,
     )
-    count_col.caption(f"Foto {current + 1} de {len(images)}")
+    count_col.markdown(
+        f'<div style="text-align:center; color: var(--mineral-muted); padding-top: .55rem;">Foto {current + 1} de {len(images)}</div>',
+        unsafe_allow_html=True,
+    )
     next_col.button(
-        ">",
+        "Siguiente",
         key=f"{state_key}_next",
         help="Foto siguiente",
         on_click=move_photo,
         args=(state_key, len(images), 1),
+        use_container_width=True,
     )
 
 
-st.title("Ficha de pieza")
+def item_location_label(item) -> str:
+    if not item.locality:
+        return "Origen por completar"
+    parts = [item.locality.mine, item.locality.region, item.locality.country]
+    return " · ".join(part for part in parts if part) or "Origen por completar"
+
 
 query_code = st.query_params.get("pieza")
 default_code = normalize_item_code(query_code) if query_code else st.session_state.get("selected_item_code", "")
-with st.form("item_lookup"):
-    typed_code = st.text_input("ID de pieza", value=default_code, placeholder="Ej: 1 o MIN-0001")
-    lookup_submitted = st.form_submit_button("Buscar")
+
+render_page_header(
+    "Ficha de pieza",
+    "Consulta",
+    "Busca una pieza por ID para ver sus fotografías, datos de origen y ficha mineral asociada.",
+    meta=["Galería", "Datos de pieza", "Wiki mineral"],
+)
+
+with st.container(border=True):
+    with st.form("item_lookup"):
+        search_col, button_col = st.columns([3, 1])
+        typed_code = search_col.text_input(
+            "ID de pieza",
+            value=default_code,
+            placeholder="Ej: 1 o MIN-0001",
+        )
+        lookup_submitted = button_col.form_submit_button(
+            "Buscar",
+            type="primary",
+            use_container_width=True,
+        )
 
 if lookup_submitted and typed_code:
     st.session_state["selected_item_code"] = normalize_item_code(typed_code)
@@ -151,23 +189,31 @@ try:
             st.warning("No existe una pieza con ese ID.")
             st.stop()
 
-        st.header(item.display_name or item.mineral.name)
-        c1, c2, c3 = st.columns(3)
-        c1.write(f"**ID:** {item.item_code}")
-        c2.write(f"**Mineral principal:** {item.mineral.name}")
-        c3.write(f"**Vendido:** {'Si' if item.sold else 'No'}")
+        images = existing_item_images(item)
+        render_section_heading(
+            item.display_name or item.mineral.name,
+            item_location_label(item),
+            aside=item.item_code,
+        )
+        render_metric_cards(
+            [
+                ("Mineral", item.mineral.name, "Principal"),
+                ("Estado", status_label(bool(item.sold)), "Disponibilidad"),
+                ("Fotos", len(images), "Locales disponibles"),
+            ]
+        )
 
-        action_cols = st.columns([1, 1, 4])
+        action_cols = st.columns([1.3, 1.1, 3.6])
         if item.purchase_link:
-            action_cols[0].link_button("Comprar / ver anuncio", item.purchase_link)
-        if admin_unlocked() and action_cols[1].button("Editar pieza"):
+            action_cols[0].link_button("Comprar / ver anuncio", item.purchase_link, use_container_width=True)
+        if admin_unlocked() and action_cols[1].button("Editar pieza", use_container_width=True):
             st.session_state["editing_item_code"] = item.item_code
             st.switch_page("views/3_Alta_edicion.py")
 
         pieza_tab, wiki_tab = st.tabs(["Pieza", "Wiki mineral"])
 
         with pieza_tab:
-            left, right = st.columns([1, 2])
+            left, right = st.columns([1.05, 1.55])
             with left:
                 render_item_photos(item)
 

@@ -7,6 +7,7 @@ import secrets
 import streamlit as st
 
 from src.settings import get_setting
+from src.ui import render_page_header
 
 
 ADMIN_PASSWORD_ENV = "ADMIN_PASSWORD_HASH"
@@ -96,9 +97,13 @@ def require_admin_access() -> None:
     if admin_unlocked():
         return
 
-    st.title("Acceso protegido")
+    render_page_header(
+        "Administracion",
+        "Acceso protegido",
+        "Introduce la contrasena de administracion para continuar.",
+        meta=["Zona privada", "Control de edicion"],
+    )
     if admin_password_configured():
-        st.warning("Introduce la contrasena de administracion para continuar.")
         _render_unlock_form("main")
     else:
         st.error("ADMIN_PASSWORD_HASH no esta configurado en el entorno.")

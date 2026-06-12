@@ -116,7 +116,10 @@ try:
 
     if admin_unlocked() and items:
         st.divider()
-        st.subheader("Edición rápida")
+        render_section_heading(
+            "Edicion rapida",
+            "Abre una pieza filtrada directamente en el formulario de administracion.",
+        )
         edit_code = st.selectbox(
             "Pieza",
             [item.item_code for item in items],

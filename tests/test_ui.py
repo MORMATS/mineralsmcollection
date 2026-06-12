@@ -1,5 +1,6 @@
 from PIL import Image
 
+from src import ui as ui_module
 from src.ui import (
     escape_html,
     image_height_ratio,
@@ -26,6 +27,25 @@ def test_status_helpers_return_public_labels_and_classes():
     assert status_label(True) == "Vendido"
     assert status_class(False) == "is-available"
     assert status_class(True) == "is-sold"
+
+
+def test_global_styles_include_market4watch_theme_tokens(monkeypatch):
+    captured = {}
+
+    def capture_markup(markup: str) -> None:
+        captured["markup"] = markup
+
+    monkeypatch.setattr(ui_module, "render_html", capture_markup)
+
+    ui_module.render_global_styles()
+
+    markup = captured["markup"]
+    assert "--m4w-primary: #f6f0e6;" in markup
+    assert "--m4w-surface: #fffaf2;" in markup
+    assert "--m4w-accent: #153a5b;" in markup
+    assert "--m4w-border: #c4a882;" in markup
+    assert "--mineral-forest: var(--m4w-accent);" in markup
+    assert "border-left: 4px solid var(--m4w-accent)" in markup
 
 
 def test_image_height_ratio_reads_image_dimensions(tmp_path):

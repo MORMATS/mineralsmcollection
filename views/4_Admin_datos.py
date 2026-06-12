@@ -5,10 +5,16 @@ from src.auth import require_admin_access
 from src.db import get_session
 from src.models import MineralSpecies, Chakra, ZodiacSign
 from src.seeds import seed_all
+from src.ui import render_page_header, render_section_heading
 
 require_admin_access()
 
-st.title("Admin de datos de referencia")
+render_page_header(
+    "Administracion",
+    "Datos de referencia",
+    "Gestiona minerales, asociaciones y datos base usados por la coleccion.",
+    meta=["Minerales", "Chakras", "Zodiaco"],
+)
 
 db = get_session()
 try:
@@ -16,7 +22,10 @@ try:
         seed_all(db)
         st.success("Seed cargado.")
 
-    st.subheader("Crear mineral de referencia manualmente")
+    render_section_heading(
+        "Crear mineral de referencia",
+        "Completa una ficha manual cuando no venga de Mindat.",
+    )
     with st.form("mineral"):
         name = st.text_input("Nombre mineral")
         formula = st.text_input("Formula")

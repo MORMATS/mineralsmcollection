@@ -9,14 +9,19 @@ from src.mindat_api import upsert_mindat_mineral, MindatConfigError
 from src.models import CollectionItem, MineralSpecies
 from src.settings import get_setting
 from src.settings import is_production
+from src.ui import render_page_header, render_section_heading
 
 
 logger = logging.getLogger(__name__)
 
 require_admin_access()
 
-st.title("Importar minerales desde Mindat API")
-st.caption("Busca minerales por nombre y actualiza los datos utiles de la wiki si Mindat los expone.")
+render_page_header(
+    "Administracion",
+    "Importar Mindat",
+    "Busca minerales por nombre y actualiza los datos utiles de la wiki si Mindat los expone.",
+    meta=["Mindat API", "Wiki mineral", "Enriquecimiento"],
+)
 
 has_token = bool(get_setting("MINDAT_API_KEY", ""))
 if has_token:
@@ -92,7 +97,10 @@ finally:
     db.close()
 
 st.divider()
-st.subheader("Actualizar wiki de mi coleccion")
+render_section_heading(
+    "Actualizar wiki de mi coleccion",
+    "Recarga desde Mindat las especies que ya tienen piezas asociadas.",
+)
 st.write(f"{len(collection_names)} mineral(es) con piezas en la coleccion.")
 if st.button("Actualizar minerales de mi coleccion desde Mindat", disabled=not collection_names):
     import_names(list(collection_names))

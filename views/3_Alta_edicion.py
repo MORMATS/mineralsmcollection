@@ -9,7 +9,12 @@ from src.crud import delete_collection_item, generate_next_item_code
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
-from src.ui import render_stable_photo, shared_image_frame_ratio
+from src.ui import (
+    render_page_header,
+    render_section_heading,
+    render_stable_photo,
+    shared_image_frame_ratio,
+)
 
 
 def clean_text(value: str | None) -> str | None:
@@ -126,7 +131,10 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
         db.commit()
         images = ordered_images(item)
 
-    st.markdown("#### Orden de fotos")
+    render_section_heading(
+        "Orden de fotos",
+        "Ajusta la portada y la secuencia visual de la ficha.",
+    )
     image_paths = [UPLOAD_DIR.parent / image.file_path for image in images]
     photo_frame_ratio = shared_image_frame_ratio(image_paths)
 
@@ -158,8 +166,12 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
 
 require_admin_access()
 
-st.title("Alta/edicion de pieza")
-st.caption("Crea piezas nuevas o carga una pieza existente para modificar sus datos.")
+render_page_header(
+    "Administracion",
+    "Alta / edicion",
+    "Crea piezas nuevas o carga una pieza existente para modificar sus datos.",
+    meta=["Piezas", "Fotos", "Inventario"],
+)
 
 if deleted_message := st.session_state.pop("item_deleted_message", None):
     st.success(deleted_message)

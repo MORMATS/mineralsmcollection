@@ -130,6 +130,16 @@ def canonical_country(value: object) -> str | None:
     return COUNTRY_LABELS.get(normalized_text_key(text), text)
 
 
+def parse_mindat_locality_id(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def valid_coordinate(latitude: object, longitude: object) -> bool:
     if latitude is None or longitude is None:
         return False
@@ -148,15 +158,18 @@ def has_locality_data(
     country: object = None,
     latitude: object = None,
     longitude: object = None,
+    mindat_locality_id: object = None,
 ) -> bool:
-    return any(clean_location_text(value) for value in (name, mine, region, country)) or valid_coordinate(
-        latitude,
-        longitude,
+    return (
+        parse_mindat_locality_id(mindat_locality_id) is not None
+        or any(clean_location_text(value) for value in (name, mine, region, country))
+        or valid_coordinate(latitude, longitude)
     )
 
 
 def locality_normalized_key(
     *,
+    mindat_locality_id: object = None,
     name: object = None,
     mine: object = None,
     region: object = None,
@@ -164,6 +177,10 @@ def locality_normalized_key(
     latitude: object = None,
     longitude: object = None,
 ) -> str | None:
+    mindat_id = parse_mindat_locality_id(mindat_locality_id)
+    if mindat_id:
+        return f"mindat:{mindat_id}"
+
     country_value = canonical_country(country)
     text_parts = {
         "country": normalized_text_key(country_value),
@@ -182,6 +199,7 @@ def locality_normalized_key(
 
 def normalized_locality_values(
     *,
+    mindat_locality_id: object = None,
     name: object = None,
     mine: object = None,
     region: object = None,
@@ -193,7 +211,9 @@ def normalized_locality_values(
     clean_mine = clean_location_text(mine)
     clean_region = clean_location_text(region)
     clean_country = canonical_country(country)
+    clean_mindat_id = parse_mindat_locality_id(mindat_locality_id)
     normalized_key = locality_normalized_key(
+        mindat_locality_id=clean_mindat_id,
         name=clean_name,
         mine=clean_mine,
         region=clean_region,
@@ -202,6 +222,7 @@ def normalized_locality_values(
         longitude=longitude,
     )
     return {
+        "mindat_locality_id": clean_mindat_id,
         "name": clean_name,
         "mine": clean_mine,
         "region": clean_region,
@@ -246,6 +267,11 @@ def locality_coordinate_guess(locality: Locality | None) -> CoordinateGuess | No
 
 def _apply_values(locality: Locality, values: dict[str, object]) -> bool:
     changed = False
+    mindat_id = values.get("mindat_locality_id")
+    if mindat_id and locality.mindat_locality_id != mindat_id:
+        locality.mindat_locality_id = mindat_id
+        changed = True
+
     for field in ("name", "mine", "region", "country", "normalized_key"):
         value = values.get(field)
         if getattr(locality, field) != value and (value or not getattr(locality, field)):
@@ -264,6 +290,7 @@ def _apply_values(locality: Locality, values: dict[str, object]) -> bool:
 def get_or_create_locality(
     db: Session,
     *,
+    mindat_locality_id: object = None,
     name: object = None,
     mine: object = None,
     region: object = None,
@@ -271,10 +298,11 @@ def get_or_create_locality(
     latitude: float | None = None,
     longitude: float | None = None,
 ) -> Locality | None:
-    if not has_locality_data(name, mine, region, country, latitude, longitude):
+    if not has_locality_data(name, mine, region, country, latitude, longitude, mindat_locality_id):
         return None
 
     values = normalized_locality_values(
+        mindat_locality_id=mindat_locality_id,
         name=name,
         mine=mine,
         region=region,
@@ -282,6 +310,31 @@ def get_or_create_locality(
         latitude=latitude,
         longitude=longitude,
     )
+    mindat_id = values.get("mindat_locality_id")
+    if mindat_id:
+        locality = db.execute(
+            select(Locality).where(Locality.mindat_locality_id == mindat_id)
+        ).scalar_one_or_none()
+        if locality:
+            _apply_values(locality, values)
+            return locality
+
+    text_key = locality_normalized_key(
+        name=values.get("name"),
+        mine=values.get("mine"),
+        region=values.get("region"),
+        country=values.get("country"),
+        latitude=values.get("latitude"),
+        longitude=values.get("longitude"),
+    )
+    if text_key:
+        locality = db.execute(
+            select(Locality).where(Locality.normalized_key == text_key)
+        ).scalar_one_or_none()
+        if locality:
+            _apply_values(locality, values)
+            return locality
+
     normalized_key = values.get("normalized_key")
     locality = None
     if normalized_key:
@@ -299,11 +352,12 @@ def get_or_create_locality(
 
 
 def _locality_score(locality: Locality) -> tuple[int, int, int]:
+    has_mindat_id = int(locality.mindat_locality_id is not None)
     has_coordinates = int(valid_coordinate(locality.latitude, locality.longitude))
     filled_fields = sum(
         1 for value in (locality.country, locality.region, locality.mine, locality.name) if clean_location_text(value)
     )
-    return has_coordinates, filled_fields, -int(locality.id or 0)
+    return has_mindat_id, has_coordinates, filled_fields, -int(locality.id or 0)
 
 
 def normalize_existing_localities(db: Session) -> dict[str, int]:
@@ -313,6 +367,7 @@ def normalize_existing_localities(db: Session) -> dict[str, int]:
 
     for locality in localities:
         values = normalized_locality_values(
+            mindat_locality_id=locality.mindat_locality_id,
             name=locality.name,
             mine=locality.mine,
             region=locality.region,
@@ -322,7 +377,15 @@ def normalize_existing_localities(db: Session) -> dict[str, int]:
         )
         normalized_key = values.get("normalized_key")
         if normalized_key:
-            groups.setdefault(str(normalized_key), []).append((locality, values))
+            text_key = locality_normalized_key(
+                name=values.get("name"),
+                mine=values.get("mine"),
+                region=values.get("region"),
+                country=values.get("country"),
+                latitude=values.get("latitude"),
+                longitude=values.get("longitude"),
+            )
+            groups.setdefault(str(text_key or normalized_key), []).append((locality, values))
         elif _apply_values(locality, values):
             updated += 1
 

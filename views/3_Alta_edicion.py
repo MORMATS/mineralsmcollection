@@ -9,6 +9,7 @@ from src.crud import delete_collection_item, generate_next_item_code
 from src.item_types import ITEM_TYPE_LABELS, item_type_label, normalize_item_type
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.localities import get_or_create_locality, has_locality_data
+from src.mindat_api import MindatConfigError, get_mindat_locality_data
 from src.models import MineralSpecies, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
 from src.ui import (
@@ -47,9 +48,61 @@ def parse_coordinate(value: str, label: str, minimum: float, maximum: float) -> 
     return coordinate
 
 
+def parse_optional_positive_int(value: str, label: str) -> int | None:
+    clean_value = clean_text(value)
+    if clean_value is None:
+        return None
+    try:
+        parsed = int(clean_value)
+    except ValueError as exc:
+        raise ValueError(f"{label} debe ser un numero entero positivo.") from exc
+    if parsed <= 0:
+        raise ValueError(f"{label} debe ser un numero entero positivo.")
+    return parsed
+
+
+def enrich_locality_from_mindat(
+    mindat_locality_id: int | None,
+    locality_name: str,
+    mine: str,
+    region: str,
+    country: str,
+    latitude: float | None,
+    longitude: float | None,
+) -> tuple[str, str, str, str, float | None, float | None]:
+    if not mindat_locality_id:
+        return locality_name, mine, region, country, latitude, longitude
+
+    needs_text = not any(clean_text(value) for value in (locality_name, mine, region, country))
+    needs_coordinates = latitude is None or longitude is None
+    if not needs_text and not needs_coordinates:
+        return locality_name, mine, region, country, latitude, longitude
+
+    try:
+        data = get_mindat_locality_data(mindat_locality_id)
+    except MindatConfigError:
+        return locality_name, mine, region, country, latitude, longitude
+    except Exception:
+        st.warning("No se pudo consultar Mindat para esa localidad. Se guardaran los datos manuales.")
+        return locality_name, mine, region, country, latitude, longitude
+
+    if not data:
+        return locality_name, mine, region, country, latitude, longitude
+
+    return (
+        locality_name or str(data.get("name") or ""),
+        mine or str(data.get("mine") or ""),
+        region or str(data.get("region") or ""),
+        country or str(data.get("country") or ""),
+        latitude if latitude is not None else data.get("latitude"),
+        longitude if longitude is not None else data.get("longitude"),
+    )
+
+
 def apply_locality(
     db,
     item: CollectionItem,
+    mindat_locality_id: int | None,
     locality_name: str,
     mine: str,
     region: str,
@@ -57,12 +110,13 @@ def apply_locality(
     latitude: float | None,
     longitude: float | None,
 ) -> None:
-    if not has_locality_data(locality_name, mine, region, country, latitude, longitude):
+    if not has_locality_data(locality_name, mine, region, country, latitude, longitude, mindat_locality_id):
         item.locality = None
         return
 
     item.locality = get_or_create_locality(
         db,
+        mindat_locality_id=mindat_locality_id,
         name=locality_name,
         mine=mine,
         region=region,
@@ -83,6 +137,7 @@ def apply_item_values(
     sold: bool,
     sold_at,
     purchase_link: str,
+    mindat_locality_id: int | None,
     locality_name: str,
     mine: str,
     region: str,
@@ -106,7 +161,7 @@ def apply_item_values(
     item.special_features = clean_text(special_features)
     item.secondary_minerals = clean_text(secondary_minerals)
     item.notes = clean_text(notes)
-    apply_locality(db, item, locality_name, mine, region, country, latitude, longitude)
+    apply_locality(db, item, mindat_locality_id, locality_name, mine, region, country, latitude, longitude)
 
 
 def item_label(item: CollectionItem) -> str:
@@ -324,6 +379,12 @@ try:
                 key=f"purchase_link_{form_suffix}",
             )
         with c2:
+            mindat_locality_id_text = st.text_input(
+                "ID localidad Mindat",
+                value=str(locality.mindat_locality_id) if locality and locality.mindat_locality_id else "",
+                placeholder="Ej: 12345",
+                key=f"mindat_locality_id_{form_suffix}",
+            )
             country = st.text_input(
                 "Pais",
                 value=locality.country if locality and locality.country else "",
@@ -397,11 +458,24 @@ try:
     if submitted:
         mineral = mineral_by_name[mineral_name]
         try:
+            mindat_locality_id = parse_optional_positive_int(
+                mindat_locality_id_text,
+                "ID localidad Mindat",
+            )
             latitude = parse_coordinate(latitude_text, "Latitud", -90, 90)
             longitude = parse_coordinate(longitude_text, "Longitud", -180, 180)
         except ValueError as exc:
             st.error(str(exc))
             st.stop()
+        locality_name, mine, region, country, latitude, longitude = enrich_locality_from_mindat(
+            mindat_locality_id,
+            locality_name,
+            mine,
+            region,
+            country,
+            latitude,
+            longitude,
+        )
         if (latitude is None) != (longitude is None):
             st.error("Para ubicar la pieza en el mapa, rellena latitud y longitud.")
             st.stop()
@@ -423,6 +497,7 @@ try:
                     sold,
                     sold_at,
                     purchase_link,
+                    mindat_locality_id,
                     locality_name,
                     mine,
                     region,
@@ -479,6 +554,7 @@ try:
                         sold,
                         sold_at,
                         purchase_link,
+                        mindat_locality_id,
                         locality_name,
                         mine,
                         region,

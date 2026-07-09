@@ -5,6 +5,7 @@ from src.db import Base
 from src.localities import (
     canonical_country,
     get_or_create_locality,
+    has_locality_data,
     locality_coordinate_guess,
     locality_normalized_key,
     normalize_existing_localities,
@@ -41,6 +42,17 @@ def test_locality_normalized_key_collapses_equivalent_locations():
     assert first == second
 
 
+def test_locality_normalized_key_prefers_mindat_locality_id():
+    key = locality_normalized_key(
+        mindat_locality_id="456",
+        name="Nombre variable",
+        country="España",
+    )
+
+    assert key == "mindat:456"
+    assert has_locality_data(mindat_locality_id="456")
+
+
 def test_get_or_create_locality_reuses_normalized_existing_row():
     db = make_session()
     first = get_or_create_locality(
@@ -62,6 +74,22 @@ def test_get_or_create_locality_reuses_normalized_existing_row():
 
     assert second.id == first.id
     assert db.execute(select(Locality)).scalars().all() == [first]
+
+
+def test_get_or_create_locality_reuses_mindat_locality_id():
+    db = make_session()
+    first = get_or_create_locality(db, mindat_locality_id=456, name="Mina Antigua Pilar")
+    db.flush()
+
+    second = get_or_create_locality(
+        db,
+        mindat_locality_id="456",
+        name="Texto distinto",
+        country="España",
+    )
+
+    assert second.id == first.id
+    assert second.country == "España"
 
 
 def test_coordinate_guess_uses_known_locality_before_country():
@@ -110,3 +138,39 @@ def test_normalize_existing_localities_merges_duplicates_and_reassigns_items():
     assert localities[0].country == "España"
     assert localities[0].normalized_key
     assert {item.locality_id for item in items} == {localities[0].id}
+
+
+def test_normalize_existing_localities_merges_text_duplicate_into_mindat_row():
+    db = make_session()
+    mineral = MineralSpecies(name="Quartz")
+    mindat_row = Locality(
+        mindat_locality_id=456,
+        name="Colmenarejo",
+        mine="Mina Antigua Pilar",
+        region="Comunidad de Madrid",
+        country="España",
+    )
+    duplicate = Locality(
+        name="Colmenarejo",
+        mine="Mina Antigua Pilar",
+        region="Comunidad de Madrid",
+        country="Espana",
+    )
+    db.add_all([mineral, mindat_row, duplicate])
+    db.flush()
+    db.add_all(
+        [
+            CollectionItem(item_code="MIN-0001", mineral=mineral, locality=mindat_row, sold=False),
+            CollectionItem(item_code="MIN-0002", mineral=mineral, locality=duplicate, sold=False),
+        ]
+    )
+    db.commit()
+
+    result = normalize_existing_localities(db)
+    db.commit()
+
+    localities = db.execute(select(Locality)).scalars().all()
+    assert result["merged"] == 1
+    assert len(localities) == 1
+    assert localities[0].mindat_locality_id == 456
+    assert localities[0].normalized_key == "mindat:456"

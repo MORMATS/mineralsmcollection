@@ -283,6 +283,10 @@ def mineral_formula(mineral: MineralSpecies, raw: dict) -> str:
     )
 
 
+def mineral_elements(mineral: MineralSpecies, raw: dict) -> str:
+    return format_value(mineral.elements) or first_text(raw, "elements", "sigelements")
+
+
 def mineral_category(mineral: MineralSpecies, raw: dict) -> str:
     return mineral.category or first_text(
         raw, "category", "classification", "class", "ima_status", "entrytype_text", "group"
@@ -333,7 +337,7 @@ def mineral_wiki_sections(mineral: MineralSpecies) -> dict[str, list[tuple[str, 
         ],
         "Quimica y clasificacion": [
             ("Formula", mineral_formula(mineral, raw)),
-            ("Elementos", first_text(raw, "elements", "sigelements")),
+            ("Elementos", mineral_elements(mineral, raw)),
             ("Categoria", mineral_category(mineral, raw)),
             ("Sistema cristalino", mineral.crystal_system or first_text(raw, "crystal_system")),
             ("Variedad de", first_text(raw, "varietyof")),

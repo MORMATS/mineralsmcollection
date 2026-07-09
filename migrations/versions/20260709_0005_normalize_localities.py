@@ -65,6 +65,16 @@ def row_value(row, field: str):
     return row[field]
 
 
+def parse_mindat_locality_id(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
 def valid_coordinate(latitude: object, longitude: object) -> bool:
     if latitude is None or longitude is None:
         return False
@@ -77,6 +87,14 @@ def valid_coordinate(latitude: object, longitude: object) -> bool:
 
 
 def locality_key(row) -> str | None:
+    mindat_id = parse_mindat_locality_id(row_value(row, "mindat_locality_id"))
+    if mindat_id:
+        return f"mindat:{mindat_id}"
+
+    return locality_text_key(row)
+
+
+def locality_text_key(row) -> str | None:
     country = canonical_country(row_value(row, "country"))
     text_parts = {
         "country": normalized_text_key(country),
@@ -108,11 +126,12 @@ def choose_coordinate(rows, field: str):
 
 
 def locality_score(row) -> tuple[int, int, int]:
+    has_mindat_id = int(parse_mindat_locality_id(row_value(row, "mindat_locality_id")) is not None)
     has_coordinates = int(valid_coordinate(row_value(row, "latitude"), row_value(row, "longitude")))
     filled_fields = sum(
         1 for field in ("country", "region", "mine", "name") if clean_text(row_value(row, field))
     )
-    return has_coordinates, filled_fields, -int(row_value(row, "id"))
+    return has_mindat_id, has_coordinates, filled_fields, -int(row_value(row, "id"))
 
 
 def upgrade() -> None:
@@ -137,7 +156,7 @@ def upgrade() -> None:
     for row in rows:
         key = locality_key(row)
         if key:
-            groups.setdefault(key, []).append(row)
+            groups.setdefault(locality_text_key(row) or key, []).append(row)
         else:
             connection.execute(
                 sa.text("UPDATE localities SET normalized_key = NULL WHERE id = :id"),
@@ -146,10 +165,11 @@ def upgrade() -> None:
 
     for key, group in groups.items():
         canonical = max(group, key=locality_score)
+        canonical_key = locality_key(canonical) or key
         ordered_for_values = [canonical, *[row for row in group if row_value(row, "id") != row_value(canonical, "id")]]
         values = {
             "id": row_value(canonical, "id"),
-            "normalized_key": key,
+            "normalized_key": canonical_key,
             "mindat_locality_id": row_value(canonical, "mindat_locality_id")
             or next((row_value(row, "mindat_locality_id") for row in group if row_value(row, "mindat_locality_id")), None),
             "name": choose_value(ordered_for_values, "name"),

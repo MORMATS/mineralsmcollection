@@ -15,6 +15,7 @@ from src.ui import (
     shared_image_frame_ratio,
     status_label,
 )
+from src.wiki import load_mindat_raw, mineral_elements, mineral_formula
 from src.wiki_view import render_generic_photo, render_mineral_wiki
 
 
@@ -61,6 +62,8 @@ def render_item_details(item) -> bool:
                 ("Mina / yacimiento", item.locality.mine),
                 ("Región", item.locality.region),
                 ("País", item.locality.country),
+                ("ID localidad", item.locality_id),
+                ("Mindat locality ID", item.locality.mindat_locality_id),
             ]
         )
         if locality_rows:
@@ -76,6 +79,17 @@ def render_item_details(item) -> bool:
     )
     if index_rows:
         sections.append(("Datos de índice", index_rows))
+
+    raw = load_mindat_raw(item.mineral)
+    mineral_rows = visible_rows(
+        [
+            ("Fórmula", mineral_formula(item.mineral, raw)),
+            ("Elementos", mineral_elements(item.mineral, raw)),
+            ("ID Mindat", item.mineral.mindat_id),
+        ]
+    )
+    if mineral_rows:
+        sections.append(("Mineral Mindat", mineral_rows))
 
     if not sections:
         st.info("Esta pieza todavía no tiene datos descriptivos adicionales.")

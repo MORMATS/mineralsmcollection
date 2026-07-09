@@ -50,6 +50,16 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
+def _to_float(value: Any) -> float | None:
+    value = _clean_value(value)
+    if value is None:
+        return None
+    try:
+        return float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
 def _to_text(value: Any) -> str | None:
     value = _clean_value(value)
     if value is None:
@@ -83,6 +93,14 @@ def _first(record: dict, *keys: str) -> Any:
 
 def _first_text(record: dict, *keys: str) -> str | None:
     return _to_text(_first(record, *keys))
+
+
+def _first_float(record: dict, *keys: str) -> float | None:
+    for key in keys:
+        parsed = _to_float(_first(record, key))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _parse_decimal(text: str) -> float | None:
@@ -211,6 +229,7 @@ def normalize_mindat_record(record: dict) -> dict:
             "chemistry",
             "chemical_formula",
         ),
+        "elements": _first_text(record, "elements", "sigelements"),
         "category": _first_text(
             record,
             "category",
@@ -265,6 +284,7 @@ def upsert_mindat_mineral(db: Session, name: str) -> tuple[MineralSpecies | None
         "mindat_id",
         "rruff_id",
         "formula",
+        "elements",
         "category",
         "crystal_system",
         "hardness_min",
@@ -287,3 +307,50 @@ def upsert_mindat_mineral(db: Session, name: str) -> tuple[MineralSpecies | None
 
     action = "creado" if created else "actualizado"
     return mineral, f"{mineral.name} {action}"
+
+
+def fetch_mindat_locality_detail(mindat_locality_id: int) -> dict | None:
+    """Fetch a Mindat locality record by ID.
+
+    Mindat has changed endpoint names over time, so try the common locality
+    shapes and accept the first dictionary payload.
+    """
+    for path in (
+        f"/localities/{mindat_locality_id}/",
+        f"/locality/{mindat_locality_id}/",
+        f"/locentries/{mindat_locality_id}/",
+    ):
+        try:
+            payload = _mindat_get(path)
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status in (400, 404, 405):
+                continue
+            raise
+
+        if isinstance(payload, dict):
+            return payload
+
+    return None
+
+
+def normalize_mindat_locality_record(record: dict) -> dict:
+    latitude = _first_float(record, "latitude", "lat", "decimal_latitude")
+    longitude = _first_float(record, "longitude", "long", "lng", "lon", "decimal_longitude")
+
+    return {
+        "mindat_locality_id": _to_int(_first(record, "id", "mindat_id", "locality_id")),
+        "name": _first_text(record, "name", "title", "locality_name", "locname"),
+        "mine": _first_text(record, "mine", "minename", "deposit", "site"),
+        "region": _first_text(record, "region", "province", "state", "district"),
+        "country": _first_text(record, "country", "country_name"),
+        "latitude": latitude,
+        "longitude": longitude,
+    }
+
+
+def get_mindat_locality_data(mindat_locality_id: int) -> dict | None:
+    record = fetch_mindat_locality_detail(mindat_locality_id)
+    if not record:
+        return None
+    return normalize_mindat_locality_record(record)

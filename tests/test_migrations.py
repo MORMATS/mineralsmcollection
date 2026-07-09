@@ -20,6 +20,7 @@ def test_alembic_initial_migration_creates_schema(monkeypatch, tmp_path):
     assert "sort_order" in [column["name"] for column in inspector.get_columns("item_images")]
     assert "item_type" in [column["name"] for column in inspector.get_columns("collection_items")]
     assert "normalized_key" in [column["name"] for column in inspector.get_columns("localities")]
+    assert "elements" in [column["name"] for column in inspector.get_columns("mineral_species")]
     assert any(
         index["name"] == "ix_localities_normalized_key" and index["unique"]
         for index in inspector.get_indexes("localities")
@@ -57,11 +58,21 @@ def test_locality_migration_deduplicates_existing_rows(monkeypatch, tmp_path):
         connection.execute(
             text(
                 """
+                INSERT INTO localities (id, mindat_locality_id, name, mine, region, country)
+                VALUES
+                    (3, 9876, 'Colmenarejo', 'Mina Antigua Pilar', 'Comunidad de Madrid', 'Spain')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
                 INSERT INTO collection_items
                     (id, item_code, mineral_id, locality_id, sold, created_at, item_type)
                 VALUES
                     (1, 'MIN-0001', 1, 1, 0, '2026-01-01 00:00:00', 'mineral'),
-                    (2, 'MIN-0002', 1, 2, 0, '2026-01-01 00:00:00', 'mineral')
+                    (2, 'MIN-0002', 1, 2, 0, '2026-01-01 00:00:00', 'mineral'),
+                    (3, 'MIN-0003', 1, 3, 0, '2026-01-01 00:00:00', 'mineral')
                 """
             )
         )
@@ -76,5 +87,5 @@ def test_locality_migration_deduplicates_existing_rows(monkeypatch, tmp_path):
 
     assert len(locality_rows) == 1
     assert locality_rows[0].country == "España"
-    assert locality_rows[0].normalized_key
+    assert locality_rows[0].normalized_key == "mindat:9876"
     assert item_locality_ids == [locality_rows[0].id]

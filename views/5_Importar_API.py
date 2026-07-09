@@ -54,6 +54,7 @@ def import_names(names: list[str]) -> None:
                                 "mindat_id": mineral.mindat_id,
                                 "nombre": mineral.name,
                                 "formula": mineral.formula,
+                                "elementos": mineral.elements,
                                 "categoria": mineral.category,
                                 "sistema_cristalino": mineral.crystal_system,
                                 "color": mineral.color,

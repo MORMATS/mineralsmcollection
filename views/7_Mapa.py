@@ -18,7 +18,7 @@ from src.item_types import (
     item_type_label,
     normalize_item_type,
 )
-from src.localities import locality_coordinate_guess, locality_label, normalized_text_key
+from src.localities import locality_coordinate_guess, locality_label, locality_normalized_key, normalized_text_key
 from src.navigation import switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
 
@@ -67,8 +67,21 @@ def group_items_by_location(items) -> tuple[list[LocationGroup], int]:
 
         latitude = coordinate.latitude
         longitude = coordinate.longitude
-        if locality and locality.normalized_key and coordinate.note != "Aproximado por pais":
-            key = ("location", locality.normalized_key)
+        locality_key = (
+            locality_normalized_key(
+                mindat_locality_id=locality.mindat_locality_id,
+                name=locality.name,
+                mine=locality.mine,
+                region=locality.region,
+                country=locality.country,
+                latitude=locality.latitude,
+                longitude=locality.longitude,
+            )
+            if locality
+            else None
+        )
+        if locality and locality_key and coordinate.note != "Aproximado por pais":
+            key = ("location", locality_key)
             label = locality_label(locality)
             filter_kind = "location"
             filter_value = ""

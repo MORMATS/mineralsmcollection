@@ -1,5 +1,6 @@
 import streamlit as st
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload
 
 from src.auth import require_admin_access
 from src.db import get_session
@@ -68,6 +69,7 @@ try:
             table_rows.append(
                 {
                     "ID": locality.id,
+                    "Mindat ID": locality.mindat_locality_id or "",
                     "Origen": locality_label(locality),
                     "Pais": locality.country or "",
                     "Region": locality.region or "",
@@ -82,6 +84,39 @@ try:
     else:
         st.info("Todavia no hay localizaciones guardadas.")
 
+    item_location_rows = (
+        db.execute(
+            select(CollectionItem)
+            .options(joinedload(CollectionItem.mineral), joinedload(CollectionItem.locality))
+            .join(CollectionItem.mineral)
+            .outerjoin(CollectionItem.locality)
+            .order_by(CollectionItem.item_code)
+        )
+        .unique()
+        .scalars()
+        .all()
+    )
+    if item_location_rows:
+        render_section_heading(
+            "Piezas por localidad",
+            "Relacion individual entre cada pieza, su mineral y el ID de localidad reutilizado.",
+        )
+        st.dataframe(
+            [
+                {
+                    "Pieza": item.item_code,
+                    "Mineral": item.mineral.name,
+                    "Localidad ID": item.locality_id or "",
+                    "Mindat locality ID": item.locality.mindat_locality_id if item.locality else "",
+                    "Origen": locality_label(item.locality),
+                    "Pais": item.locality.country if item.locality else "",
+                }
+                for item in item_location_rows
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+
     render_section_heading(
         "Crear mineral de referencia",
         "Completa una ficha manual cuando no venga de Mindat.",
@@ -89,6 +124,7 @@ try:
     with st.form("mineral"):
         name = st.text_input("Nombre mineral")
         formula = st.text_input("Formula")
+        elements = st.text_input("Elementos")
         category = st.text_input("Categoria")
         crystal_system = st.text_input("Sistema cristalino")
         hardness_min = st.number_input("Dureza min", min_value=0.0, max_value=10.0, step=0.5)
@@ -115,6 +151,7 @@ try:
         mineral = MineralSpecies(
             name=name,
             formula=formula or None,
+            elements=elements or None,
             category=category or None,
             crystal_system=crystal_system or None,
             hardness_min=hardness_min or None,

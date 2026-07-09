@@ -23,6 +23,40 @@ from src.navigation import switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
 
 
+WORLD_MAP_SVG = """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="ocean" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#dbe8ee"/>
+      <stop offset="1" stop-color="#c7d9e1"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#153a5b" flood-opacity=".14"/>
+    </filter>
+  </defs>
+  <rect width="1000" height="500" fill="url(#ocean)"/>
+  <g fill="none" stroke="#fffaf2" stroke-width="1" opacity=".38">
+    <path d="M0 125H1000M0 250H1000M0 375H1000"/>
+    <path d="M125 0V500M250 0V500M375 0V500M500 0V500M625 0V500M750 0V500M875 0V500"/>
+  </g>
+  <g filter="url(#softShadow)" fill="#d5bf99" stroke="#8f764e" stroke-width="2.4" stroke-linejoin="round">
+    <path d="M74 138 C120 92 189 72 248 89 C282 100 313 126 329 156 C307 167 281 171 260 192 C236 216 232 251 205 268 C174 288 130 274 111 245 C94 220 95 190 74 138Z"/>
+    <path d="M251 262 C289 272 318 303 316 343 C314 390 281 432 256 475 C220 426 199 382 209 336 C217 300 228 278 251 262Z"/>
+    <path d="M411 133 C448 101 509 90 568 110 C620 128 676 120 726 137 C779 154 828 187 870 222 C838 249 776 256 721 242 C679 231 646 250 607 242 C565 235 535 201 493 199 C457 197 419 188 396 163 C386 151 392 142 411 133Z"/>
+    <path d="M503 210 C543 205 580 231 594 273 C606 312 587 354 559 397 C526 360 493 318 488 278 C485 249 490 226 503 210Z"/>
+    <path d="M802 321 C838 303 881 312 910 340 C895 372 856 387 818 374 C795 366 787 341 802 321Z"/>
+    <path d="M889 414 C909 405 930 411 940 428 C925 443 901 445 884 434 C875 427 879 419 889 414Z"/>
+    <path d="M462 124 C481 114 506 116 522 132 C502 145 476 145 462 124Z"/>
+    <path d="M302 112 C321 101 345 105 359 122 C341 136 316 133 302 112Z"/>
+  </g>
+</svg>
+"""
+
+
+def world_map_data_uri() -> str:
+    return f"data:image/svg+xml;charset=utf-8,{quote(WORLD_MAP_SVG)}"
+
+
 class LocationGroup:
     def __init__(
         self,
@@ -249,28 +283,12 @@ def build_marker_rows(groups: list[LocationGroup]) -> tuple[list[dict], list[dic
     return single_rows, bubble_rows
 
 
-def padded_bounds(rows: list[dict]) -> tuple[float, float, float, float]:
-    latitudes = [float(row["latitude"]) for row in rows]
-    longitudes = [float(row["longitude"]) for row in rows]
-    min_lat, max_lat = min(latitudes), max(latitudes)
-    min_lon, max_lon = min(longitudes), max(longitudes)
-    lat_pad = max((max_lat - min_lat) * 0.35, 4)
-    lon_pad = max((max_lon - min_lon) * 0.35, 4)
-    return (
-        max(min_lat - lat_pad, -85),
-        min(max_lat + lat_pad, 85),
-        max(min_lon - lon_pad, -180),
-        min(max_lon + lon_pad, 180),
-    )
-
-
-def projected_position(row: dict, bounds: tuple[float, float, float, float]) -> tuple[float, float]:
-    min_lat, max_lat, min_lon, max_lon = bounds
-    lat_span = max(max_lat - min_lat, 1)
-    lon_span = max(max_lon - min_lon, 1)
-    x = (float(row["longitude"]) - min_lon) / lon_span * 100
-    y = (max_lat - float(row["latitude"])) / lat_span * 100
-    return min(max(x, 7), 93), min(max(y, 10), 90)
+def projected_position(row: dict) -> tuple[float, float]:
+    longitude = min(max(float(row["longitude"]), -180), 180)
+    latitude = min(max(float(row["latitude"]), -82), 85)
+    x = (longitude + 180) / 360 * 100
+    y = (90 - latitude) / 180 * 100
+    return min(max(x, 3), 97), min(max(y, 5), 95)
 
 
 def map_marker_href(row: dict, selected_item_type: str | None) -> str:
@@ -288,11 +306,11 @@ def map_marker_href(row: dict, selected_item_type: str | None) -> str:
 
 def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_type: str | None) -> None:
     rows = [*bubble_rows, *single_rows]
-    bounds = padded_bounds(rows)
     markers = []
+    world_map = world_map_data_uri()
 
     for row in rows:
-        x, y = projected_position(row, bounds)
+        x, y = projected_position(row)
         href = map_marker_href(row, selected_item_type)
         title = (
             f"{row['label']} · {row['count']} pieza(s) · "
@@ -319,32 +337,29 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
         <style>
         .atlas-map {{
             position: relative;
-            min-height: 560px;
+            aspect-ratio: 2 / 1;
+            min-height: 420px;
             margin: .8rem 0 1.1rem;
             overflow: hidden;
             border: 1px solid var(--m4w-border);
             border-radius: 8px;
-            background:
-                linear-gradient(90deg, rgba(21,58,91,.08) 1px, transparent 1px),
-                linear-gradient(0deg, rgba(21,58,91,.08) 1px, transparent 1px),
-                radial-gradient(circle at 18% 24%, rgba(196,168,130,.22), transparent 22%),
-                radial-gradient(circle at 78% 70%, rgba(30,80,128,.16), transparent 24%),
-                linear-gradient(145deg, #f8f3ea 0%, #e7dfd1 100%);
-            background-size: 9.09% 12.5%, 9.09% 12.5%, auto, auto, auto;
+            background: #dbe8ee;
             box-shadow: var(--m4w-shadow-soft);
         }}
 
-        .atlas-map::before {{
-            content: "";
+        .atlas-world-map {{
             position: absolute;
-            inset: 8%;
-            border: 1px solid rgba(21,58,91,.12);
-            border-radius: 999px;
-            transform: rotate(-8deg);
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            filter: saturate(.98) contrast(1.02);
+            pointer-events: none;
+            user-select: none;
         }}
 
         .atlas-map::after {{
-            content: "Mapa sin dependencias externas · clic en burbuja o foto";
+            content: "Mapa del mundo · clic en burbuja o foto";
             position: absolute;
             left: 1rem;
             bottom: .85rem;
@@ -418,7 +433,7 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
 
         @media (max-width: 760px) {{
             .atlas-map {{
-                min-height: 430px;
+                min-height: 310px;
             }}
             .atlas-marker {{
                 width: 3.6rem;
@@ -436,6 +451,7 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
         }}
         </style>
         <section class="atlas-map" aria-label="Mapa de lugares de la colección">
+            <img class="atlas-world-map" src="{escape_html(world_map)}" alt="" aria-hidden="true">
             {"".join(markers)}
         </section>
         """

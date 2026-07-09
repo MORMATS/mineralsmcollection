@@ -9,6 +9,7 @@ from src.db import UPLOAD_DIR, get_session
 from src.item_images import ordered_images
 from src.mindat_api import MindatConfigError, upsert_mindat_mineral
 from src.models import MineralSpecies
+from src.navigation import switch_to_item
 from src.settings import is_production
 from src.ui import (
     render_collection_card,
@@ -128,8 +129,7 @@ try:
                         key=f"wiki_item_{item.id}",
                         use_container_width=True,
                     ):
-                        st.session_state["selected_item_code"] = item.item_code
-                        st.switch_page("views/2_Ficha.py")
+                        switch_to_item(item.item_code)
 
 finally:
     db.close()

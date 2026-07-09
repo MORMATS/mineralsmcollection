@@ -103,6 +103,7 @@ class Locality(Base):
     mine: Mapped[str | None] = mapped_column(String(255))
     region: Mapped[str | None] = mapped_column(String(255))
     country: Mapped[str | None] = mapped_column(String(120), index=True)
+    normalized_key: Mapped[str | None] = mapped_column(String(900), unique=True, index=True)
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(Text)

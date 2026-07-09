@@ -5,6 +5,7 @@ from src.crud import get_item_by_code, normalize_item_code
 from src.db import UPLOAD_DIR, get_session
 from src.item_types import item_type_label
 from src.item_images import ordered_images
+from src.navigation import switch_to_admin_edit
 from src.ui import (
     render_detail_grid,
     render_metric_cards,
@@ -210,8 +211,7 @@ try:
         if item.purchase_link:
             action_cols[0].link_button("Comprar / ver anuncio", item.purchase_link, use_container_width=True)
         if admin_unlocked() and action_cols[1].button("Editar pieza", use_container_width=True):
-            st.session_state["editing_item_code"] = item.item_code
-            st.switch_page("views/3_Alta_edicion.py")
+            switch_to_admin_edit(item.item_code)
 
         pieza_tab, wiki_tab = st.tabs(["Pieza", "Wiki mineral"])
 

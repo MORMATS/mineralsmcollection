@@ -1,11 +1,12 @@
 import streamlit as st
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from src.auth import require_admin_access
 from src.db import get_session
-from src.models import MineralSpecies, Chakra, ZodiacSign
+from src.localities import locality_coordinate_guess, locality_label, normalize_existing_localities
+from src.models import CollectionItem, Locality, MineralSpecies, Chakra, ZodiacSign
 from src.seeds import seed_all
-from src.ui import render_page_header, render_section_heading
+from src.ui import render_metric_cards, render_page_header, render_section_heading
 
 require_admin_access()
 
@@ -21,6 +22,65 @@ try:
     if st.button("Cargar/recargar seed inicial"):
         seed_all(db)
         st.success("Seed cargado.")
+
+    render_section_heading(
+        "Localizaciones",
+        "Tabla normalizada de origenes reutilizables por varias piezas.",
+    )
+    locality_rows = (
+        db.execute(
+            select(Locality, func.count(CollectionItem.id))
+            .outerjoin(CollectionItem, CollectionItem.locality_id == Locality.id)
+            .group_by(Locality.id)
+            .order_by(Locality.country, Locality.region, Locality.mine, Locality.name, Locality.id)
+        )
+        .all()
+    )
+    total_items_with_locality = sum(count for _, count in locality_rows)
+    mapped_localities = sum(1 for locality, _ in locality_rows if locality_coordinate_guess(locality))
+    render_metric_cards(
+        [
+            ("Localizaciones", len(locality_rows), "Origenes unicos"),
+            ("Piezas ubicadas", total_items_with_locality, "Con localidad asignada"),
+            ("Mapeables", mapped_localities, "Exactas o aproximadas"),
+        ]
+    )
+    if st.button("Normalizar localizaciones duplicadas", use_container_width=True):
+        result = normalize_existing_localities(db)
+        db.commit()
+        st.success(
+            "Localizaciones normalizadas: "
+            f"{result['updated']} actualizadas, {result['merged']} duplicadas fusionadas, "
+            f"{result['reassigned_items']} piezas reasignadas."
+        )
+        st.rerun()
+
+    if locality_rows:
+        table_rows = []
+        for locality, item_count in locality_rows:
+            coordinate = locality_coordinate_guess(locality)
+            if coordinate:
+                coordinates = f"{coordinate.latitude:.5f}, {coordinate.longitude:.5f}"
+                map_status = coordinate.note
+            else:
+                coordinates = ""
+                map_status = "Sin coordenada mapeable"
+            table_rows.append(
+                {
+                    "ID": locality.id,
+                    "Origen": locality_label(locality),
+                    "Pais": locality.country or "",
+                    "Region": locality.region or "",
+                    "Mina": locality.mine or "",
+                    "Localidad": locality.name or "",
+                    "Coordenadas": coordinates,
+                    "Mapa": map_status,
+                    "Piezas": item_count,
+                }
+            )
+        st.dataframe(table_rows, hide_index=True, use_container_width=True)
+    else:
+        st.info("Todavia no hay localizaciones guardadas.")
 
     render_section_heading(
         "Crear mineral de referencia",

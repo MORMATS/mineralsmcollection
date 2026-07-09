@@ -11,6 +11,17 @@ from src.errors import is_schema_migration_error
 from src.item_types import ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
 from src.item_images import ordered_images
 from src.models import CollectionItem, MineralSpecies
+from src.navigation import (
+    admin_data_page,
+    admin_edit_page,
+    admin_import_page,
+    collection_page,
+    item_page,
+    map_page,
+    switch_to_collection,
+    switch_to_item,
+    wiki_page,
+)
 from src.settings import is_production
 from src.ui import (
     render_collection_card,
@@ -85,8 +96,7 @@ def home_page() -> None:
             label_visibility="collapsed",
         )
         if action_col.button("Abrir ficha", type="primary", use_container_width=True) and item_code:
-            st.session_state["selected_item_code"] = item_code.strip()
-            st.switch_page("views/2_Ficha.py")
+            switch_to_item(item_code.strip())
 
         latest_items = (
             db.execute(
@@ -127,24 +137,23 @@ def home_page() -> None:
                         key=f"home_open_item_{item.id}",
                         use_container_width=True,
                     ):
-                        st.session_state["selected_item_code"] = item.item_code
-                        st.switch_page("views/2_Ficha.py")
+                        switch_to_item(item.item_code)
     finally:
         db.close()
 
 
 public_pages = [
     st.Page(home_page, title="Inicio", icon=":material/home:", default=True),
-    st.Page("views/1_Coleccion.py", title="Colección", icon=":material/grid_view:"),
-    st.Page("views/7_Mapa.py", title="Mapa", icon=":material/travel_explore:"),
-    st.Page("views/2_Ficha.py", title="Ficha", icon=":material/search:"),
-    st.Page("views/6_Wiki_minerales.py", title="Wiki minerales", icon=":material/menu_book:"),
+    collection_page(),
+    map_page(),
+    item_page(),
+    wiki_page(),
 ]
 
 admin_pages = [
-    st.Page("views/3_Alta_edicion.py", title="Alta/edición", icon=":material/add_circle:"),
-    st.Page("views/4_Admin_datos.py", title="Admin datos", icon=":material/database:"),
-    st.Page("views/5_Importar_API.py", title="Importar API", icon=":material/cloud_download:"),
+    admin_edit_page(),
+    admin_data_page(),
+    admin_import_page(),
 ]
 
 pages = {"Catálogo": public_pages}
@@ -160,22 +169,17 @@ def handle_map_link_navigation() -> None:
     map_type = st.query_params.get("map_tipo")
 
     if map_item:
-        st.session_state["selected_item_code"] = map_item
         st.query_params.clear()
-        st.query_params["pieza"] = map_item
-        st.switch_page("views/2_Ficha.py")
+        switch_to_item(map_item)
 
     if map_country or map_localities:
         st.query_params.clear()
-        if map_country:
-            st.query_params["pais"] = map_country
-        if map_localities:
-            st.query_params["localidades"] = map_localities
-        if map_zone:
-            st.query_params["zona"] = map_zone
-        if map_type:
-            st.query_params["tipo"] = map_type
-        st.switch_page("views/1_Coleccion.py")
+        switch_to_collection(
+            country=map_country,
+            locality_ids=map_localities,
+            zone=map_zone,
+            item_type=map_type,
+        )
 
 
 handle_map_link_navigation()

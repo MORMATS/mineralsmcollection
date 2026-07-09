@@ -8,7 +8,8 @@ from src.db import get_session, UPLOAD_DIR
 from src.crud import delete_collection_item, generate_next_item_code
 from src.item_types import ITEM_TYPE_LABELS, item_type_label, normalize_item_type
 from src.item_images import move_image, normalize_image_order, ordered_images
-from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
+from src.localities import get_or_create_locality, has_locality_data
+from src.models import MineralSpecies, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
 from src.ui import (
     render_page_header,
@@ -46,19 +47,6 @@ def parse_coordinate(value: str, label: str, minimum: float, maximum: float) -> 
     return coordinate
 
 
-def has_locality_data(
-    locality_name: str,
-    mine: str,
-    region: str,
-    country: str,
-    latitude: float | None,
-    longitude: float | None,
-) -> bool:
-    return any(clean_text(value) for value in [locality_name, mine, region, country]) or (
-        latitude is not None or longitude is not None
-    )
-
-
 def apply_locality(
     db,
     item: CollectionItem,
@@ -73,16 +61,15 @@ def apply_locality(
         item.locality = None
         return
 
-    locality = item.locality or Locality()
-    locality.name = clean_text(locality_name)
-    locality.mine = clean_text(mine)
-    locality.region = clean_text(region)
-    locality.country = clean_text(country)
-    locality.latitude = latitude
-    locality.longitude = longitude
-    if item.locality is None:
-        db.add(locality)
-        item.locality = locality
+    item.locality = get_or_create_locality(
+        db,
+        name=locality_name,
+        mine=mine,
+        region=region,
+        country=country,
+        latitude=latitude,
+        longitude=longitude,
+    )
 
 
 def apply_item_values(

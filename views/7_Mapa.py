@@ -18,77 +18,9 @@ from src.item_types import (
     item_type_label,
     normalize_item_type,
 )
+from src.localities import locality_coordinate_guess, locality_label, normalized_text_key
+from src.navigation import switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
-
-
-COUNTRY_CENTROIDS = {
-    "afganistan": (33.9391, 67.71),
-    "afghanistan": (33.9391, 67.71),
-    "alemania": (51.1657, 10.4515),
-    "argentina": (-38.4161, -63.6167),
-    "australia": (-25.2744, 133.7751),
-    "bolivia": (-16.2902, -63.5887),
-    "brasil": (-14.235, -51.9253),
-    "brazil": (-14.235, -51.9253),
-    "canada": (56.1304, -106.3468),
-    "chile": (-35.6751, -71.543),
-    "china": (35.8617, 104.1954),
-    "colombia": (4.5709, -74.2973),
-    "congo": (-4.0383, 21.7587),
-    "czech republic": (49.8175, 15.473),
-    "democratic republic of congo": (-4.0383, 21.7587),
-    "egipto": (26.8206, 30.8025),
-    "egypt": (26.8206, 30.8025),
-    "espana": (40.4637, -3.7492),
-    "españa": (40.4637, -3.7492),
-    "estados unidos": (39.8283, -98.5795),
-    "finland": (61.9241, 25.7482),
-    "finlandia": (61.9241, 25.7482),
-    "france": (46.2276, 2.2137),
-    "francia": (46.2276, 2.2137),
-    "germany": (51.1657, 10.4515),
-    "greece": (39.0742, 21.8243),
-    "grecia": (39.0742, 21.8243),
-    "india": (20.5937, 78.9629),
-    "italia": (41.8719, 12.5674),
-    "italy": (41.8719, 12.5674),
-    "japan": (36.2048, 138.2529),
-    "japon": (36.2048, 138.2529),
-    "japón": (36.2048, 138.2529),
-    "madagascar": (-18.7669, 46.8691),
-    "marruecos": (31.7917, -7.0926),
-    "mexico": (23.6345, -102.5528),
-    "méxico": (23.6345, -102.5528),
-    "morocco": (31.7917, -7.0926),
-    "mozambique": (-18.6657, 35.5296),
-    "myanmar": (21.9162, 95.956),
-    "namibia": (-22.9576, 18.4904),
-    "noruega": (60.472, 8.4689),
-    "norway": (60.472, 8.4689),
-    "pakistan": (30.3753, 69.3451),
-    "peru": (-9.19, -75.0152),
-    "poland": (51.9194, 19.1451),
-    "polonia": (51.9194, 19.1451),
-    "portugal": (39.3999, -8.2245),
-    "reino unido": (55.3781, -3.436),
-    "romania": (45.9432, 24.9668),
-    "rumania": (45.9432, 24.9668),
-    "russia": (61.524, 105.3188),
-    "south africa": (-30.5595, 22.9375),
-    "spain": (40.4637, -3.7492),
-    "sri lanka": (7.8731, 80.7718),
-    "sudafrica": (-30.5595, 22.9375),
-    "sudáfrica": (-30.5595, 22.9375),
-    "sweden": (60.1282, 18.6435),
-    "suecia": (60.1282, 18.6435),
-    "tanzania": (-6.369, 34.8888),
-    "turkey": (38.9637, 35.2433),
-    "turquia": (38.9637, 35.2433),
-    "turquía": (38.9637, 35.2433),
-    "united kingdom": (55.3781, -3.436),
-    "united states": (39.8283, -98.5795),
-    "usa": (39.8283, -98.5795),
-}
 
 
 class LocationGroup:
@@ -122,77 +54,43 @@ def cover_image_path(item) -> Path | None:
     return None
 
 
-def valid_coordinate(latitude: object, longitude: object) -> bool:
-    if latitude is None or longitude is None:
-        return False
-    try:
-        lat = float(latitude)
-        lon = float(longitude)
-    except (TypeError, ValueError):
-        return False
-    return -90 <= lat <= 90 and -180 <= lon <= 180
-
-
-def country_key(country: str | None) -> str:
-    return str(country or "").strip().lower()
-
-
-def country_centroid(country: str | None) -> tuple[float, float] | None:
-    return COUNTRY_CENTROIDS.get(country_key(country))
-
-
-def location_label(item) -> str:
-    locality = item.locality
-    if not locality:
-        return "Origen por completar"
-    parts = [locality.name, locality.mine, locality.region, locality.country]
-    return " · ".join(part for part in parts if part) or "Origen por completar"
-
-
-def country_label(item) -> str:
-    if item.locality and item.locality.country:
-        return item.locality.country
-    return "País por completar"
-
-
 def group_items_by_location(items) -> tuple[list[LocationGroup], int]:
     groups: OrderedDict[tuple, LocationGroup] = OrderedDict()
     missing_coordinates = 0
 
     for item in items:
         locality = item.locality
-        if locality and valid_coordinate(locality.latitude, locality.longitude):
-            latitude = float(locality.latitude)
-            longitude = float(locality.longitude)
-            key = ("exact", round(latitude, 4), round(longitude, 4))
-            if key not in groups:
-                groups[key] = LocationGroup(
-                    latitude=latitude,
-                    longitude=longitude,
-                    label=location_label(item),
-                    filter_kind="location",
-                    filter_value="",
-                    coordinate_note="Coordenada exacta",
-                )
-            groups[key].items.append(item)
-            continue
-
-        centroid = country_centroid(locality.country if locality else None)
-        if not centroid:
+        coordinate = locality_coordinate_guess(locality)
+        if not coordinate:
             missing_coordinates += 1
             continue
 
-        latitude, longitude = centroid
-        country = country_label(item)
-        key = ("country", country_key(country))
+        latitude = coordinate.latitude
+        longitude = coordinate.longitude
+        if locality and locality.normalized_key and coordinate.note != "Aproximado por pais":
+            key = ("location", locality.normalized_key)
+            label = locality_label(locality)
+            filter_kind = "location"
+            filter_value = ""
+        elif locality and locality.country:
+            key = ("country", normalized_text_key(locality.country))
+            label = locality.country
+            filter_kind = "country"
+            filter_value = locality.country
+        else:
+            key = ("coordinate", round(latitude, 4), round(longitude, 4))
+            label = locality_label(locality)
+            filter_kind = "location"
+            filter_value = ""
+
         if key not in groups:
             groups[key] = LocationGroup(
                 latitude=latitude,
                 longitude=longitude,
-                label=country,
-                filter_kind="country",
-                filter_value=country,
-                coordinate_note="Aproximado por país",
+                label=label,
+                filter_kind=filter_kind,
+                filter_value=filter_value,
+                coordinate_note=coordinate.note,
             )
         groups[key].items.append(item)
 
@@ -532,22 +430,18 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
 
 
 def open_item(item_code: str) -> None:
-    st.session_state["selected_item_code"] = item_code
     st.query_params.clear()
-    st.query_params["pieza"] = item_code
-    st.switch_page("views/2_Ficha.py")
+    switch_to_item(item_code)
 
 
 def open_location(row: dict, selected_item_type: str | None) -> None:
     st.query_params.clear()
-    if row["target_kind"] == "country":
-        st.query_params["pais"] = row["target_value"]
-    else:
-        st.query_params["localidades"] = row["target_value"]
-    st.query_params["zona"] = row["label"]
-    if selected_item_type:
-        st.query_params["tipo"] = selected_item_type
-    st.switch_page("views/1_Coleccion.py")
+    switch_to_collection(
+        country=row["target_value"] if row["target_kind"] == "country" else None,
+        locality_ids=row["target_value"] if row["target_kind"] != "country" else None,
+        zone=row["label"],
+        item_type=selected_item_type,
+    )
 
 
 render_page_header(
@@ -592,14 +486,14 @@ try:
 
     render_metric_cards(
         [
-            ("Lugares", len(groups), "Con coordenadas"),
+            ("Lugares", len(groups), "Exactos o aproximados"),
             ("En mapa", mapped_count, "Piezas ubicadas"),
-            ("Pendientes", missing_coordinates, "Sin ubicación mapeable"),
+            ("Pendientes", missing_coordinates, "Sin ubicacion mapeable"),
         ]
     )
 
     if not groups:
-        st.info("No hay piezas con coordenadas ni país reconocido para los filtros actuales. Añade país o latitud/longitud desde Alta / edición.")
+        st.info("No hay piezas con origen mapeable para los filtros actuales. Anade pais, region conocida o latitud/longitud desde Alta / edicion.")
         st.stop()
 
     render_map(single_rows, bubble_rows, selected_item_type)

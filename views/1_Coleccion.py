@@ -15,6 +15,7 @@ from src.item_types import (
     normalize_item_type,
 )
 from src.item_images import ordered_images
+from src.navigation import clear_collection_filters, collection_filters, switch_to_admin_edit, switch_to_item
 from src.ui import (
     render_collection_card,
     render_metric_cards,
@@ -71,9 +72,7 @@ def render_gallery(items) -> None:
                     use_container_width=True,
                     type="primary",
                 ):
-                    st.session_state["selected_item_code"] = item.item_code
-                    st.query_params.clear()
-                    st.switch_page("views/2_Ficha.py")
+                    switch_to_item(item.item_code)
 
 
 render_page_header(
@@ -86,10 +85,11 @@ db = get_session()
 
 try:
     opts = option_lists(db)
-    map_locality_ids = parse_locality_ids(st.query_params.get("localidades"))
-    map_zone_label = st.query_params.get("zona", "")
-    requested_country = st.query_params.get("pais", "")
-    requested_item_type = st.query_params.get("tipo", "")
+    active_map_filters = collection_filters()
+    map_locality_ids = parse_locality_ids(active_map_filters.get("localidades"))
+    map_zone_label = active_map_filters.get("zona", "")
+    requested_country = active_map_filters.get("pais", "")
+    requested_item_type = active_map_filters.get("tipo", "")
     default_item_type_filter = ITEM_TYPE_FILTER_ALL
     if requested_item_type:
         default_item_type_filter = item_type_filter_label(normalize_item_type(requested_item_type))
@@ -133,6 +133,7 @@ try:
         zone_name = map_zone_label or "zona seleccionada"
         st.info(f"Filtro de mapa activo: {zone_name}.")
         if st.button("Quitar filtro del mapa", use_container_width=False):
+            clear_collection_filters()
             st.query_params.clear()
             st.rerun()
 
@@ -186,7 +187,6 @@ try:
             ),
         )
         if st.button("Editar pieza seleccionada"):
-            st.session_state["editing_item_code"] = edit_code
-            st.switch_page("views/3_Alta_edicion.py")
+            switch_to_admin_edit(edit_code)
 finally:
     db.close()

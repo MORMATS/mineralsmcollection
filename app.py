@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from src.auth import admin_unlocked, render_admin_sidebar
 from src.db import get_session, UPLOAD_DIR
+from src.item_types import ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
 from src.item_images import ordered_images
 from src.models import CollectionItem, MineralSpecies
 from src.settings import is_production
@@ -50,11 +51,24 @@ def home_page() -> None:
         total_minerals = db.scalar(select(func.count(MineralSpecies.id))) or 0
         sold_items = db.scalar(select(func.count(CollectionItem.id)).where(CollectionItem.sold == True)) or 0
         available_items = max(total_items - sold_items, 0)
+        mineral_items = (
+            db.scalar(
+                select(func.count(CollectionItem.id)).where(CollectionItem.item_type == ITEM_TYPE_MINERAL)
+            )
+            or 0
+        )
+        pendant_items = (
+            db.scalar(
+                select(func.count(CollectionItem.id)).where(CollectionItem.item_type == ITEM_TYPE_PENDANT)
+            )
+            or 0
+        )
 
         render_metric_cards(
             [
                 ("Piezas", total_items, f"{available_items} disponibles"),
-                ("Minerales", total_minerals, "Fichas de referencia"),
+                ("Minerales", mineral_items, f"{total_minerals} fichas de referencia"),
+                ("Colgantes", pendant_items, "Piezas tipo joya"),
                 ("Vendidas", sold_items, "Histórico de la colección"),
             ]
         )
@@ -100,6 +114,7 @@ def home_page() -> None:
                 with col:
                     render_collection_card(
                         item_code=item.item_code,
+                        item_type=item.item_type,
                         title=item_label(item),
                         mineral_name=item.mineral.name,
                         country=item.locality.country if item.locality else None,
@@ -120,6 +135,7 @@ def home_page() -> None:
 public_pages = [
     st.Page(home_page, title="Inicio", icon=":material/home:", default=True),
     st.Page("views/1_Coleccion.py", title="Colección", icon=":material/grid_view:"),
+    st.Page("views/7_Mapa.py", title="Mapa", icon=":material/travel_explore:"),
     st.Page("views/2_Ficha.py", title="Ficha", icon=":material/search:"),
     st.Page("views/6_Wiki_minerales.py", title="Wiki minerales", icon=":material/menu_book:"),
 ]
@@ -134,6 +150,34 @@ pages = {"Catálogo": public_pages}
 if admin_unlocked():
     pages["Administración"] = admin_pages
 
+
+def handle_map_link_navigation() -> None:
+    map_item = st.query_params.get("map_item")
+    map_country = st.query_params.get("map_pais")
+    map_localities = st.query_params.get("map_localidades")
+    map_zone = st.query_params.get("map_zona")
+    map_type = st.query_params.get("map_tipo")
+
+    if map_item:
+        st.session_state["selected_item_code"] = map_item
+        st.query_params.clear()
+        st.query_params["pieza"] = map_item
+        st.switch_page("views/2_Ficha.py")
+
+    if map_country or map_localities:
+        st.query_params.clear()
+        if map_country:
+            st.query_params["pais"] = map_country
+        if map_localities:
+            st.query_params["localidades"] = map_localities
+        if map_zone:
+            st.query_params["zona"] = map_zone
+        if map_type:
+            st.query_params["tipo"] = map_type
+        st.switch_page("views/1_Coleccion.py")
+
+
+handle_map_link_navigation()
 selected_page = st.navigation(pages)
 render_admin_sidebar()
 try:

@@ -11,6 +11,8 @@ from typing import Iterable
 import streamlit as st
 from PIL import Image, UnidentifiedImageError
 
+from src.item_types import item_type_label, normalize_item_type
+
 
 def escape_html(value: object) -> str:
     if value is None:
@@ -31,6 +33,10 @@ def status_label(sold: bool) -> str:
 
 def status_class(sold: bool) -> str:
     return "is-sold" if sold else "is-available"
+
+
+def type_class(item_type: str | None) -> str:
+    return f"is-{normalize_item_type(item_type)}"
 
 
 def render_html(markup: str) -> None:
@@ -378,7 +384,8 @@ def render_global_styles() -> None:
         }
 
         .premium-chip,
-        .status-chip {
+        .status-chip,
+        .type-chip {
             display: inline-flex;
             align-items: center;
             gap: .35rem;
@@ -403,6 +410,18 @@ def render_global_styles() -> None:
             border-color: rgba(139, 26, 26, .24);
             background: rgba(139, 26, 26, .10);
             color: var(--m4w-danger);
+        }
+
+        .type-chip.is-mineral {
+            border-color: rgba(21, 58, 91, .25);
+            background: rgba(21, 58, 91, .10);
+            color: var(--m4w-accent);
+        }
+
+        .type-chip.is-pendant {
+            border-color: rgba(196, 168, 130, .55);
+            background: rgba(196, 168, 130, .18);
+            color: var(--m4w-text);
         }
 
         .metric-strip {
@@ -563,6 +582,12 @@ def render_global_styles() -> None:
             position: absolute;
             top: .65rem;
             left: .65rem;
+        }
+
+        .collection-type {
+            position: absolute;
+            top: .65rem;
+            right: .65rem;
         }
 
         .collection-body {
@@ -848,6 +873,10 @@ def render_status_chip(sold: bool) -> str:
     return f'<span class="status-chip {status_class(sold)}">{status_label(sold)}</span>'
 
 
+def render_type_chip(item_type: str | None) -> str:
+    return f'<span class="type-chip {type_class(item_type)}">{item_type_label(item_type)}</span>'
+
+
 def _placeholder_markup(title: str, subtitle: str | None = None) -> str:
     subtitle_html = (
         f'<span class="premium-photo-placeholder-label">{escape_html(subtitle)}</span>'
@@ -873,6 +902,7 @@ def render_photo_placeholder(title: str, subtitle: str | None = None, frame_rati
 def render_collection_card(
     *,
     item_code: str,
+    item_type: str | None = None,
     title: str,
     mineral_name: str,
     country: str | None,
@@ -902,6 +932,7 @@ def render_collection_card(
             <div class="collection-visual">
                 {image_html}
                 <div class="collection-status">{render_status_chip(sold)}</div>
+                <div class="collection-type">{render_type_chip(item_type)}</div>
             </div>
             <div class="collection-body">
                 <div class="collection-code">{escape_html(item_code)}</div>
@@ -953,6 +984,12 @@ def _image_data_uri(path_text: str, mtime_ns: int) -> str | None:
     mime_type = mimetypes.guess_type(path.name)[0] or "image/webp"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
+
+
+def image_data_uri(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return _image_data_uri(str(path), path.stat().st_mtime_ns)
 
 
 def render_stable_photo(path: Path, frame_ratio: float, caption: str | None = None) -> None:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from src.auth import require_admin_access
 from src.db import get_session, UPLOAD_DIR
 from src.crud import delete_collection_item, generate_next_item_code
+from src.item_types import ITEM_TYPE_LABELS, item_type_label, normalize_item_type
 from src.item_images import move_image, normalize_image_order, ordered_images
 from src.models import MineralSpecies, Locality, CollectionItem, ItemImage
 from src.image_utils import ImageUploadError, save_uploaded_images
@@ -24,8 +25,38 @@ def clean_text(value: str | None) -> str | None:
     return value or None
 
 
-def has_locality_data(locality_name: str, mine: str, region: str, country: str) -> bool:
-    return any(clean_text(value) for value in [locality_name, mine, region, country])
+def format_coordinate(value: float | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def parse_coordinate(value: str, label: str, minimum: float, maximum: float) -> float | None:
+    clean_value = clean_text(value)
+    if clean_value is None:
+        return None
+
+    try:
+        coordinate = float(clean_value.replace(",", "."))
+    except ValueError as exc:
+        raise ValueError(f"{label} debe ser un número válido.") from exc
+
+    if coordinate < minimum or coordinate > maximum:
+        raise ValueError(f"{label} debe estar entre {minimum:g} y {maximum:g}.")
+    return coordinate
+
+
+def has_locality_data(
+    locality_name: str,
+    mine: str,
+    region: str,
+    country: str,
+    latitude: float | None,
+    longitude: float | None,
+) -> bool:
+    return any(clean_text(value) for value in [locality_name, mine, region, country]) or (
+        latitude is not None or longitude is not None
+    )
 
 
 def apply_locality(
@@ -35,8 +66,10 @@ def apply_locality(
     mine: str,
     region: str,
     country: str,
+    latitude: float | None,
+    longitude: float | None,
 ) -> None:
-    if not has_locality_data(locality_name, mine, region, country):
+    if not has_locality_data(locality_name, mine, region, country, latitude, longitude):
         item.locality = None
         return
 
@@ -45,6 +78,8 @@ def apply_locality(
     locality.mine = clean_text(mine)
     locality.region = clean_text(region)
     locality.country = clean_text(country)
+    locality.latitude = latitude
+    locality.longitude = longitude
     if item.locality is None:
         db.add(locality)
         item.locality = locality
@@ -54,6 +89,7 @@ def apply_item_values(
     db,
     item: CollectionItem,
     mineral: MineralSpecies,
+    item_type: str,
     display_name: str,
     secondary_minerals: str,
     special_features: str,
@@ -64,11 +100,14 @@ def apply_item_values(
     mine: str,
     region: str,
     country: str,
+    latitude: float | None,
+    longitude: float | None,
     acquisition_source: str,
     purchase_price: float,
     sale_price: float,
     notes: str,
 ) -> None:
+    item.item_type = normalize_item_type(item_type)
     item.display_name = clean_text(display_name)
     item.mineral = mineral
     item.acquisition_source = clean_text(acquisition_source)
@@ -80,7 +119,7 @@ def apply_item_values(
     item.special_features = clean_text(special_features)
     item.secondary_minerals = clean_text(secondary_minerals)
     item.notes = clean_text(notes)
-    apply_locality(db, item, locality_name, mine, region, country)
+    apply_locality(db, item, locality_name, mine, region, country, latitude, longitude)
 
 
 def item_label(item: CollectionItem) -> str:
@@ -236,6 +275,9 @@ try:
     form_suffix = item.item_code if item else "new"
     default_mineral = item.mineral.name if item else mineral_names[0]
     default_mineral_index = mineral_names.index(default_mineral) if default_mineral in mineral_names else 0
+    item_type_values = list(ITEM_TYPE_LABELS.keys())
+    default_item_type = normalize_item_type(item.item_type if item else None)
+    default_item_type_index = item_type_values.index(default_item_type)
     locality = item.locality if item else None
 
     with st.form(f"item_form_{form_suffix}", clear_on_submit=False):
@@ -251,6 +293,13 @@ try:
                 "Nombre visible",
                 value=item.display_name if item and item.display_name else "",
                 key=f"display_name_{form_suffix}",
+            )
+            selected_item_type = st.selectbox(
+                "Tipo de pieza",
+                item_type_values,
+                index=default_item_type_index,
+                format_func=item_type_label,
+                key=f"item_type_{form_suffix}",
             )
             mineral_name = st.selectbox(
                 "Mineral principal",
@@ -308,6 +357,19 @@ try:
                 value=locality.name if locality and locality.name else "",
                 key=f"locality_{form_suffix}",
             )
+            lat_col, lon_col = st.columns(2)
+            latitude_text = lat_col.text_input(
+                "Latitud",
+                value=format_coordinate(locality.latitude) if locality else "",
+                placeholder="Ej: 40.4168",
+                key=f"latitude_{form_suffix}",
+            )
+            longitude_text = lon_col.text_input(
+                "Longitud",
+                value=format_coordinate(locality.longitude) if locality else "",
+                placeholder="Ej: -3.7038",
+                key=f"longitude_{form_suffix}",
+            )
             acquisition_source = st.text_input(
                 "Proveedor / origen adquisicion",
                 value=item.acquisition_source if item and item.acquisition_source else "",
@@ -347,6 +409,15 @@ try:
 
     if submitted:
         mineral = mineral_by_name[mineral_name]
+        try:
+            latitude = parse_coordinate(latitude_text, "Latitud", -90, 90)
+            longitude = parse_coordinate(longitude_text, "Longitud", -180, 180)
+        except ValueError as exc:
+            st.error(str(exc))
+            st.stop()
+        if (latitude is None) != (longitude is None):
+            st.error("Para ubicar la pieza en el mapa, rellena latitud y longitud.")
+            st.stop()
 
         if editing:
             if not item:
@@ -358,6 +429,7 @@ try:
                     db,
                     item,
                     mineral,
+                    selected_item_type,
                     display_name,
                     secondary_minerals,
                     special_features,
@@ -368,6 +440,8 @@ try:
                     mine,
                     region,
                     country,
+                    latitude,
+                    longitude,
                     acquisition_source,
                     purchase_price,
                     sale_price,
@@ -411,6 +485,7 @@ try:
                         db,
                         new_item,
                         mineral,
+                        selected_item_type,
                         display_name,
                         secondary_minerals,
                         special_features,
@@ -421,6 +496,8 @@ try:
                         mine,
                         region,
                         country,
+                        latitude,
+                        longitude,
                         acquisition_source,
                         purchase_price,
                         sale_price,

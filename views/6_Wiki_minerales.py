@@ -116,6 +116,7 @@ try:
                 with cols[offset]:
                     render_collection_card(
                         item_code=item.item_code,
+                        item_type=item.item_type,
                         title=item_label(item),
                         mineral_name=mineral.name,
                         country=item.locality.country if item.locality else None,

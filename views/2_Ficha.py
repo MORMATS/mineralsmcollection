@@ -3,6 +3,7 @@ import streamlit as st
 from src.auth import admin_unlocked
 from src.crud import get_item_by_code, normalize_item_code
 from src.db import UPLOAD_DIR, get_session
+from src.item_types import item_type_label
 from src.item_images import ordered_images
 from src.ui import (
     render_detail_grid,
@@ -66,6 +67,7 @@ def render_item_details(item) -> bool:
 
     index_rows = visible_rows(
         [
+            ("Tipo", item_type_label(item.item_type)),
             ("Características especiales", item.special_features),
             ("Minerales secundarios", item.secondary_minerals),
             ("Notas", item.notes),
@@ -198,6 +200,7 @@ try:
         render_metric_cards(
             [
                 ("Mineral", item.mineral.name, "Principal"),
+                ("Tipo", item_type_label(item.item_type), "Clasificación"),
                 ("Estado", status_label(bool(item.sold)), "Disponibilidad"),
                 ("Fotos", len(images), "Locales disponibles"),
             ]

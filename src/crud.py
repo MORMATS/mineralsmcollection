@@ -6,6 +6,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.orm import joinedload, Session
 
 from src.image_utils import delete_uploaded_images
+from src.item_types import ITEM_TYPE_FILTER_OPTIONS, item_type_from_filter, normalize_item_type
 from src.models import CollectionItem, MineralSpecies, Locality, Chakra
 
 
@@ -55,9 +56,11 @@ def list_collection_items(
     db: Session,
     text: str | None = None,
     sold: bool | None = None,
+    item_type: str | None = None,
     mineral_name: str | None = None,
     country: str | None = None,
     chakra: str | None = None,
+    locality_ids: list[int] | None = None,
 ):
     stmt = (
         select(CollectionItem)
@@ -88,11 +91,17 @@ def list_collection_items(
     if sold is not None:
         stmt = stmt.where(CollectionItem.sold == sold)
 
+    if item_type:
+        stmt = stmt.where(CollectionItem.item_type == normalize_item_type(item_type))
+
     if mineral_name and mineral_name != "Todos":
         stmt = stmt.where(MineralSpecies.name == mineral_name)
 
     if country and country != "Todos":
         stmt = stmt.where(Locality.country == country)
+
+    if locality_ids:
+        stmt = stmt.where(CollectionItem.locality_id.in_(locality_ids))
 
     if chakra and chakra != "Todos":
         stmt = stmt.join(MineralSpecies.chakras).where(Chakra.name == chakra)
@@ -140,4 +149,9 @@ def option_lists(db: Session) -> dict:
         "minerals": ["Todos"] + list(minerals),
         "countries": ["Todos"] + list(countries),
         "chakras": ["Todos"] + list(chakras),
+        "item_types": list(ITEM_TYPE_FILTER_OPTIONS),
     }
+
+
+def selected_item_type_from_label(label: str | None) -> str | None:
+    return item_type_from_filter(label)

@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db import Base
+from src.item_types import DEFAULT_ITEM_TYPE
 
 
 def utc_now() -> datetime:
@@ -115,6 +116,13 @@ class CollectionItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_code: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(
+        String(20),
+        default=DEFAULT_ITEM_TYPE,
+        server_default=DEFAULT_ITEM_TYPE,
+        nullable=False,
+        index=True,
+    )
     display_name: Mapped[str | None] = mapped_column(String(180))
     mineral_id: Mapped[int] = mapped_column(ForeignKey("mineral_species.id"), nullable=False)
     locality_id: Mapped[int | None] = mapped_column(ForeignKey("localities.id"))

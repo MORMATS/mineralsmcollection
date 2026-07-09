@@ -7,6 +7,7 @@ from src.crud import (
     delete_collection_item,
     generate_next_item_code,
     get_item_by_code,
+    list_collection_items,
     normalize_item_code,
 )
 from src.db import Base
@@ -50,6 +51,34 @@ def test_get_item_by_code_accepts_bare_number():
     db.commit()
 
     assert get_item_by_code(db, "12").item_code == "MIN-0012"
+
+
+def test_list_collection_items_filters_by_item_type():
+    db = make_session()
+    mineral = MineralSpecies(name="Quartz")
+    db.add(mineral)
+    db.flush()
+    db.add_all(
+        [
+            CollectionItem(
+                item_code="MIN-0001",
+                item_type="mineral",
+                mineral=mineral,
+                sold=False,
+            ),
+            CollectionItem(
+                item_code="MIN-0002",
+                item_type="pendant",
+                mineral=mineral,
+                sold=False,
+            ),
+        ]
+    )
+    db.commit()
+
+    items = list_collection_items(db, item_type="pendant")
+
+    assert [item.item_code for item in items] == ["MIN-0002"]
 
 
 def test_delete_collection_item_removes_database_rows_and_files(monkeypatch, tmp_path):

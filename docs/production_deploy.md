@@ -60,6 +60,7 @@ sudo APP_DIR=/opt/isminerals/app bash /opt/isminerals/app/scripts/deploy_lxc.sh
 ```
 
 El script hace `git pull`, instala dependencias, ejecuta Alembic y reinicia `isminerals.service`.
+Antes de ejecutar Alembic carga `/etc/isminerals/isminerals.env` para usar la misma `DATABASE_URL` que el servicio. Si usas otro archivo, pasalo con `ENV_FILE=/ruta/al/env`.
 Si no pasas `APP_DIR`, intenta leer el `WorkingDirectory` real del servicio systemd y lo usa como ruta de la app. Para confirmar que estas actualizando la misma ruta que ejecuta el servicio:
 
 ```bash
@@ -93,3 +94,10 @@ python scripts/test_db.py
 ```
 
 Revisa que los logs no contengan `DATABASE_URL`, tokens ni contraseña.
+
+Si la web muestra que la base de datos necesita una actualizacion tras subir cambios, ejecuta:
+
+```bash
+sudo APP_DIR=/opt/isminerals/app ENV_FILE=/etc/isminerals/isminerals.env bash /opt/isminerals/app/scripts/deploy_lxc.sh
+sudo journalctl -u isminerals -n 80 --no-pager
+```

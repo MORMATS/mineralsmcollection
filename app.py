@@ -7,6 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from src.auth import admin_unlocked, render_admin_sidebar
 from src.db import get_session, UPLOAD_DIR
+from src.errors import is_schema_migration_error
 from src.item_types import ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
 from src.item_images import ordered_images
 from src.models import CollectionItem, MineralSpecies
@@ -182,9 +183,12 @@ selected_page = st.navigation(pages)
 render_admin_sidebar()
 try:
     selected_page.run()
-except Exception:
+except Exception as exc:
     logger.exception("Unhandled application error")
     if is_production():
-        st.error("No se pudo cargar esta vista. Revisa el servicio o intentalo de nuevo mas tarde.")
+        if is_schema_migration_error(exc):
+            st.error("La base de datos necesita una actualizacion. Ejecuta las migraciones y reinicia el servicio.")
+        else:
+            st.error("No se pudo cargar esta vista. Revisa el servicio o intentalo de nuevo mas tarde.")
     else:
         raise

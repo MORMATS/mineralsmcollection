@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from collections import OrderedDict
+from pathlib import Path
 from urllib.parse import urlencode
 
 import streamlit as st
 import streamlit.components.v1 as components
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from src.crud import list_collection_map_items, option_lists
-from src.db import get_session
+from src.db import DATA_DIR, UPLOAD_DIR, get_session
+from src.item_images import ordered_images
 from src.item_types import (
     ITEM_TYPE_FILTER_ALL,
     item_type_from_filter,
@@ -18,6 +23,12 @@ from src.item_types import (
 from src.localities import locality_coordinate_guess, locality_label, locality_normalized_key, normalized_text_key
 from src.navigation import switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
+
+
+MAP_THUMBNAIL_DIR = DATA_DIR / "map_thumbnails"
+MAP_THUMBNAIL_SIZE = (112, 112)
+MAP_THUMBNAIL_QUALITY = 72
+MAP_MAX_SLIDES_PER_MARKER = 5
 
 
 class LocationGroup:
@@ -41,6 +52,75 @@ class LocationGroup:
 
 def item_label(item) -> str:
     return item.display_name or item.mineral.name
+
+
+def cover_image_path(item) -> Path | None:
+    for image in ordered_images(item):
+        path = UPLOAD_DIR.parent / image.file_path
+        if path.exists():
+            return path
+    return None
+
+
+def map_thumbnail_cache_path(path: Path, mtime_ns: int) -> Path:
+    digest = hashlib.sha1(
+        f"{path.resolve()}:{mtime_ns}:{MAP_THUMBNAIL_SIZE[0]}x{MAP_THUMBNAIL_SIZE[1]}".encode("utf-8")
+    ).hexdigest()
+    return MAP_THUMBNAIL_DIR / f"{digest}.jpg"
+
+
+def save_map_thumbnail(source_path: Path, cache_path: Path) -> bool:
+    try:
+        with Image.open(source_path) as image:
+            image = ImageOps.exif_transpose(image)
+            if "A" in image.getbands():
+                background = Image.new("RGB", image.size, (255, 250, 242))
+                background.paste(image, mask=image.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+
+            try:
+                resample = Image.Resampling.LANCZOS
+            except AttributeError:
+                resample = Image.LANCZOS
+
+            thumbnail = ImageOps.fit(image, MAP_THUMBNAIL_SIZE, method=resample)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            thumbnail.save(cache_path, format="JPEG", quality=MAP_THUMBNAIL_QUALITY, optimize=True)
+            return True
+    except (FileNotFoundError, OSError, UnidentifiedImageError):
+        return False
+
+
+@st.cache_data(show_spinner=False)
+def map_thumbnail_data_uri(path_text: str, mtime_ns: int) -> str | None:
+    path = Path(path_text)
+    if not path.exists():
+        return None
+
+    cache_path = map_thumbnail_cache_path(path, mtime_ns)
+    if not cache_path.exists() and not save_map_thumbnail(path, cache_path):
+        return None
+
+    encoded = base64.b64encode(cache_path.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def map_photo_slides(items: list, limit: int = MAP_MAX_SLIDES_PER_MARKER) -> list[str]:
+    slides = []
+    for item in items:
+        cover_path = cover_image_path(item)
+        if not cover_path:
+            continue
+
+        data_uri = map_thumbnail_data_uri(str(cover_path), cover_path.stat().st_mtime_ns)
+        if data_uri:
+            slides.append(data_uri)
+        if len(slides) >= limit:
+            break
+
+    return slides
 
 
 def group_items_by_location(items) -> tuple[list[LocationGroup], int]:
@@ -139,6 +219,7 @@ def build_marker_rows(groups: list[LocationGroup]) -> tuple[list[dict], list[dic
             "minerals": mineral_summary(items),
             "item_codes": ", ".join(item.item_code for item in items[:4]),
             "coordinate_note": group.coordinate_note,
+            "photo_slides": map_photo_slides(items),
         }
 
         if count == 1:
@@ -210,6 +291,7 @@ def leaflet_marker_payload(row: dict, selected_item_type: str | None) -> dict:
         "href": map_marker_href(row, selected_item_type),
         "action": row["action"],
         "kind": row["target_kind"],
+        "slides": row["photo_slides"],
     }
 
 
@@ -323,6 +405,14 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
             transition: transform .16s ease, filter .16s ease, width .16s ease, height .16s ease;
         }
 
+        .atlas-pin.has-photo {
+            width: calc(56px * var(--marker-scale));
+            height: calc(56px * var(--marker-scale));
+            overflow: hidden;
+            background: #0f2c45;
+            isolation: isolate;
+        }
+
         .atlas-pin:hover {
             transform: translate(-50%, -50%) scale(1.08);
             filter: saturate(1.08) contrast(1.04);
@@ -334,6 +424,66 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
 
         .atlas-pin.is-bubble {
             background: var(--m4w-accent);
+        }
+
+        .atlas-slide {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background-position: center;
+            background-size: cover;
+            opacity: 0;
+        }
+
+        .atlas-pin.has-photo:not(.is-slideshow) .atlas-slide {
+            opacity: 1;
+        }
+
+        .atlas-pin.is-slideshow .atlas-slide {
+            animation-name: atlas-slide-fade;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+        }
+
+        .atlas-pin.has-photo::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            border-radius: inherit;
+            box-shadow:
+                inset 0 0 0 1px rgba(21, 58, 91, .24),
+                inset 0 -18px 28px rgba(15, 44, 69, .25);
+            pointer-events: none;
+        }
+
+        .atlas-photo-count {
+            position: absolute;
+            right: -.25rem;
+            bottom: -.25rem;
+            z-index: 2;
+            display: grid;
+            place-items: center;
+            min-width: 1.45rem;
+            height: 1.45rem;
+            padding: 0 .22rem;
+            border: 2px solid rgba(255, 250, 242, .96);
+            border-radius: 999px;
+            background: var(--m4w-accent);
+            color: #fffaf2;
+            box-shadow: 0 6px 14px rgba(21, 58, 91, .22);
+            font-size: .72rem;
+            font-weight: 850;
+            line-height: 1;
+        }
+
+        @keyframes atlas-slide-fade {
+            0%, 30% {
+                opacity: 1;
+            }
+            38%, 100% {
+                opacity: 0;
+            }
         }
 
         .atlas-map-label {
@@ -462,6 +612,18 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
 
             const markerHtml = (row) => {
                 const markerClass = row.kind === "item" ? "is-item" : "is-bubble";
+                const slides = Array.isArray(row.slides) ? row.slides.filter(Boolean) : [];
+                if (slides.length) {
+                    const duration = Math.max(8, slides.length * 3.25);
+                    const step = duration / slides.length;
+                    const slideHtml = slides.map((slide, index) => (
+                        `<span class="atlas-slide" style="background-image:url('${escapeHtml(slide)}'); animation-duration:${duration.toFixed(2)}s; animation-delay:${(-index * step).toFixed(2)}s"></span>`
+                    )).join("");
+                    const slideshowClass = slides.length > 1 ? "is-slideshow" : "";
+                    const countBadge = row.count > 1 ? `<span class="atlas-photo-count">${escapeHtml(row.countText)}</span>` : "";
+                    return `<span class="atlas-pin ${markerClass} has-photo ${slideshowClass}" aria-hidden="true">${slideHtml}${countBadge}</span>`;
+                }
+
                 const markerText = row.kind === "item" ? "1" : row.countText;
                 return `<span class="atlas-pin ${markerClass}" aria-hidden="true">${escapeHtml(markerText)}</span>`;
             };

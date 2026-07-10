@@ -122,6 +122,7 @@ def list_collection_map_items(
         .options(
             joinedload(CollectionItem.mineral),
             joinedload(CollectionItem.locality),
+            selectinload(CollectionItem.images),
         )
         .join(CollectionItem.mineral)
         .outerjoin(CollectionItem.locality)

@@ -24,6 +24,10 @@ from src.ui import (
 )
 
 
+GALLERY_PAGE_SIZE_OPTIONS = [12, 24, 48, "Todos"]
+DEFAULT_GALLERY_PAGE_SIZE = 24
+
+
 def cover_image_path(item) -> Path | None:
     for image in ordered_images(item):
         path = UPLOAD_DIR.parent / image.file_path
@@ -73,6 +77,35 @@ def render_gallery(items) -> None:
                     type="primary",
                 ):
                     switch_to_item(item.item_code)
+
+
+def paginated_items(items: list) -> tuple[list, int, int, int | str]:
+    if len(items) <= DEFAULT_GALLERY_PAGE_SIZE:
+        return items, 1, 1, len(items)
+
+    control_col, page_col = st.columns([1, 1])
+    page_size = control_col.selectbox(
+        "Piezas por pagina",
+        GALLERY_PAGE_SIZE_OPTIONS,
+        index=GALLERY_PAGE_SIZE_OPTIONS.index(DEFAULT_GALLERY_PAGE_SIZE),
+        key="collection_page_size",
+    )
+    if page_size == "Todos":
+        return items, 1, 1, page_size
+
+    total_pages = max((len(items) + int(page_size) - 1) // int(page_size), 1)
+    current_default = min(int(st.session_state.get("collection_page_number", 1)), total_pages)
+    st.session_state["collection_page_number"] = current_default
+    page = page_col.number_input(
+        "Pagina",
+        min_value=1,
+        max_value=total_pages,
+        value=current_default,
+        step=1,
+        key="collection_page_number",
+    )
+    start = (int(page) - 1) * int(page_size)
+    return items[start : start + int(page_size)], int(page), total_pages, page_size
 
 
 render_page_header(
@@ -162,12 +195,16 @@ try:
     )
 
     if items:
+        visible_items, current_page, total_pages, page_size = paginated_items(items)
+        if total_pages > 1:
+            st.caption(f"Mostrando {len(visible_items)} de {len(items)} piezas - pagina {current_page}/{total_pages}.")
+
         render_section_heading(
             "Piezas",
             "Abre cualquier ficha para ver fotografías, origen, notas y wiki del mineral.",
             aside=f"{len(items)} resultado(s)",
         )
-        render_gallery(items)
+        render_gallery(visible_items)
     else:
         st.info("No hay piezas que coincidan con los filtros.")
 

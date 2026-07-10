@@ -83,3 +83,20 @@ def test_shared_image_frame_ratio_clamps_extreme_single_images(tmp_path):
 
     assert shared_image_frame_ratio([very_wide]) == 0.75
     assert shared_image_frame_ratio([very_tall]) == 1.35
+
+
+def test_collection_thumbnail_data_uri_creates_card_sized_cache(tmp_path, monkeypatch):
+    source = tmp_path / "source.jpg"
+    Image.new("RGB", (1600, 1200), color="white").save(source)
+    thumb_dir = tmp_path / "thumbs"
+
+    monkeypatch.setattr(ui_module, "CARD_THUMBNAIL_DIR", thumb_dir)
+    ui_module._collection_thumbnail_data_uri.clear()
+
+    data_uri = ui_module._collection_thumbnail_data_uri(str(source), source.stat().st_mtime_ns)
+
+    thumbnails = list(thumb_dir.glob("*.jpg"))
+    assert data_uri.startswith("data:image/jpeg;base64,")
+    assert len(thumbnails) == 1
+    with Image.open(thumbnails[0]) as image:
+        assert image.size == ui_module.CARD_THUMBNAIL_SIZE

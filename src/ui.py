@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import mimetypes
 from pathlib import Path
@@ -9,9 +10,14 @@ from textwrap import dedent
 from typing import Iterable
 
 import streamlit as st
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from src.item_types import item_type_label, normalize_item_type
+
+
+CARD_THUMBNAIL_DIR = Path(__file__).resolve().parents[1] / "data" / "image_thumbnails"
+CARD_THUMBNAIL_SIZE = (520, 562)
+CARD_THUMBNAIL_QUALITY = 76
 
 
 def escape_html(value: object) -> str:
@@ -911,9 +917,12 @@ def render_collection_card(
 ) -> None:
     image_html = ""
     if cover_path and cover_path.exists():
-        data_uri = _image_data_uri(str(cover_path), cover_path.stat().st_mtime_ns)
+        data_uri = _collection_thumbnail_data_uri(str(cover_path), cover_path.stat().st_mtime_ns)
         if data_uri:
-            image_html = f'<img src="{data_uri}" alt="{escape_html(title)}">'
+            image_html = (
+                f'<img src="{data_uri}" alt="{escape_html(title)}" '
+                'loading="lazy" decoding="async" fetchpriority="low">'
+            )
 
     if not image_html:
         image_html = (
@@ -973,6 +982,49 @@ def shared_image_frame_ratio(
 
     baseline = float(median(ratios))
     return min(max(baseline, min_ratio), max_ratio)
+
+
+def _thumbnail_cache_path(path: Path, mtime_ns: int, size: tuple[int, int]) -> Path:
+    digest = hashlib.sha1(f"{path.resolve()}:{mtime_ns}:{size[0]}x{size[1]}".encode("utf-8")).hexdigest()
+    return CARD_THUMBNAIL_DIR / f"{digest}.jpg"
+
+
+def _save_collection_thumbnail(source_path: Path, cache_path: Path, size: tuple[int, int]) -> bool:
+    try:
+        with Image.open(source_path) as image:
+            image = ImageOps.exif_transpose(image)
+            if "A" in image.getbands():
+                background = Image.new("RGB", image.size, (255, 250, 242))
+                background.paste(image, mask=image.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+
+            try:
+                resample = Image.Resampling.LANCZOS
+            except AttributeError:
+                resample = Image.LANCZOS
+
+            thumbnail = ImageOps.fit(image, size, method=resample)
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            thumbnail.save(cache_path, format="JPEG", quality=CARD_THUMBNAIL_QUALITY, optimize=True, progressive=True)
+            return True
+    except (FileNotFoundError, OSError, UnidentifiedImageError):
+        return False
+
+
+@st.cache_data(show_spinner=False)
+def _collection_thumbnail_data_uri(path_text: str, mtime_ns: int) -> str | None:
+    path = Path(path_text)
+    if not path.exists():
+        return None
+
+    cache_path = _thumbnail_cache_path(path, mtime_ns, CARD_THUMBNAIL_SIZE)
+    if not cache_path.exists() and not _save_collection_thumbnail(path, cache_path, CARD_THUMBNAIL_SIZE):
+        return None
+
+    encoded = base64.b64encode(cache_path.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 @st.cache_data(show_spinner=False)

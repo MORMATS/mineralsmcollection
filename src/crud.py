@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from sqlalchemy import select, or_
-from sqlalchemy.orm import joinedload, Session
+from sqlalchemy.orm import joinedload, selectinload, Session
 
 from src.image_utils import delete_uploaded_images
 from src.item_types import ITEM_TYPE_FILTER_OPTIONS, item_type_from_filter, normalize_item_type
@@ -65,9 +65,9 @@ def list_collection_items(
     stmt = (
         select(CollectionItem)
         .options(
-            joinedload(CollectionItem.mineral).joinedload(MineralSpecies.chakras),
+            selectinload(CollectionItem.mineral).selectinload(MineralSpecies.chakras),
             joinedload(CollectionItem.locality),
-            joinedload(CollectionItem.images),
+            selectinload(CollectionItem.images),
         )
         .join(CollectionItem.mineral)
         .outerjoin(CollectionItem.locality)
@@ -105,6 +105,39 @@ def list_collection_items(
 
     if chakra and chakra != "Todos":
         stmt = stmt.join(MineralSpecies.chakras).where(Chakra.name == chakra)
+
+    stmt = stmt.order_by(CollectionItem.created_at.desc())
+    return db.execute(stmt).unique().scalars().all()
+
+
+def list_collection_map_items(
+    db: Session,
+    sold: bool | None = None,
+    item_type: str | None = None,
+    mineral_name: str | None = None,
+    country: str | None = None,
+):
+    stmt = (
+        select(CollectionItem)
+        .options(
+            joinedload(CollectionItem.mineral),
+            joinedload(CollectionItem.locality),
+        )
+        .join(CollectionItem.mineral)
+        .outerjoin(CollectionItem.locality)
+    )
+
+    if sold is not None:
+        stmt = stmt.where(CollectionItem.sold == sold)
+
+    if item_type:
+        stmt = stmt.where(CollectionItem.item_type == normalize_item_type(item_type))
+
+    if mineral_name and mineral_name != "Todos":
+        stmt = stmt.where(MineralSpecies.name == mineral_name)
+
+    if country and country != "Todos":
+        stmt = stmt.where(Locality.country == country)
 
     stmt = stmt.order_by(CollectionItem.created_at.desc())
     return db.execute(stmt).unique().scalars().all()

@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import base64
 import json
 from collections import OrderedDict
-from io import BytesIO
-from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import streamlit as st
 import streamlit.components.v1 as components
-from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
 
-from src.crud import list_collection_items, option_lists
-from src.db import UPLOAD_DIR, get_session
-from src.item_images import ordered_images
+from src.crud import list_collection_map_items, option_lists
+from src.db import get_session
 from src.item_types import (
     ITEM_TYPE_FILTER_ALL,
     item_type_from_filter,
@@ -46,14 +41,6 @@ class LocationGroup:
 
 def item_label(item) -> str:
     return item.display_name or item.mineral.name
-
-
-def cover_image_path(item) -> Path | None:
-    for image in ordered_images(item):
-        path = UPLOAD_DIR.parent / image.file_path
-        if path.exists():
-            return path
-    return None
 
 
 def group_items_by_location(items) -> tuple[list[LocationGroup], int]:
@@ -134,72 +121,6 @@ def locality_ids_text(items: list) -> str:
     return ",".join(str(locality_id) for locality_id in ids)
 
 
-def marker_color(item_type: str | None) -> tuple[int, int, int]:
-    normalized = normalize_item_type(item_type)
-    if normalized == "pendant":
-        return (143, 96, 34)
-    return (21, 58, 91)
-
-
-@st.cache_data(show_spinner=False)
-def _photo_icon_data_uri(path_text: str, mtime_ns: int, item_type: str | None) -> str | None:
-    path = Path(path_text)
-    try:
-        image = Image.open(path).convert("RGB")
-    except (FileNotFoundError, OSError, UnidentifiedImageError):
-        return None
-
-    try:
-        resample = Image.Resampling.LANCZOS
-    except AttributeError:
-        resample = Image.LANCZOS
-
-    image = ImageOps.fit(image, (128, 128), method=resample)
-    canvas = Image.new("RGBA", (150, 150), (0, 0, 0, 0))
-    mask = Image.new("L", (128, 128), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    mask_draw.ellipse((0, 0, 127, 127), fill=255)
-    canvas.paste(image, (11, 11), mask)
-
-    ring = marker_color(item_type)
-    draw = ImageDraw.Draw(canvas)
-    draw.ellipse((7, 7, 142, 142), outline=(*ring, 255), width=7)
-    draw.ellipse((15, 15, 134, 134), outline=(255, 250, 242, 245), width=3)
-
-    output = BytesIO()
-    canvas.save(output, format="PNG")
-    encoded = base64.b64encode(output.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
-
-
-def fallback_icon_data_uri(title: str, item_type: str | None) -> str:
-    initial = "?"
-    for character in title.strip():
-        if character.isalnum():
-            initial = character.upper()
-            break
-
-    ring = marker_color(item_type)
-    svg = f"""
-    <svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150">
-      <circle cx="75" cy="75" r="68" fill="#fffaf2" stroke="rgb({ring[0]}, {ring[1]}, {ring[2]})" stroke-width="7"/>
-      <circle cx="75" cy="75" r="56" fill="#ede8de" stroke="#fffaf2" stroke-width="3"/>
-      <text x="75" y="85" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="56" font-weight="800" fill="rgb({ring[0]}, {ring[1]}, {ring[2]})">{initial}</text>
-    </svg>
-    """
-    return f"data:image/svg+xml;charset=utf-8,{quote(svg)}"
-
-
-def icon_data_for_item(item) -> dict:
-    cover_path = cover_image_path(item)
-    icon_url = None
-    if cover_path:
-        icon_url = _photo_icon_data_uri(str(cover_path), cover_path.stat().st_mtime_ns, item.item_type)
-    if not icon_url:
-        icon_url = fallback_icon_data_uri(item_label(item), item.item_type)
-    return {"url": icon_url, "width": 150, "height": 150, "anchorX": 75, "anchorY": 75}
-
-
 def build_marker_rows(groups: list[LocationGroup]) -> tuple[list[dict], list[dict]]:
     single_rows = []
     bubble_rows = []
@@ -226,7 +147,6 @@ def build_marker_rows(groups: list[LocationGroup]) -> tuple[list[dict], list[dic
                     "target_kind": "item",
                     "target_value": first_item.item_code,
                     "action": "Abrir ficha",
-                    "icon_data": icon_data_for_item(first_item),
                     "title": item_label(first_item),
                 }
             )
@@ -261,7 +181,7 @@ def map_marker_href(row: dict, selected_item_type: str | None) -> str:
         params["map_localidades"] = row["target_value"]
     if selected_item_type:
         params["map_tipo"] = selected_item_type
-    return "/?" + urlencode(params)
+    return "?" + urlencode(params)
 
 
 def short_map_label(label: str, limit: int = 30) -> str:
@@ -290,7 +210,6 @@ def leaflet_marker_payload(row: dict, selected_item_type: str | None) -> dict:
         "href": map_marker_href(row, selected_item_type),
         "action": row["action"],
         "kind": row["target_kind"],
-        "iconUrl": row.get("icon_data", {}).get("url") if row["target_kind"] == "item" else "",
     }
 
 
@@ -303,6 +222,10 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="preconnect" href="https://unpkg.com" crossorigin>
+        <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
+        <link rel="dns-prefetch" href="//unpkg.com">
+        <link rel="dns-prefetch" href="//tile.openstreetmap.org">
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
         <style>
         :root {
@@ -405,18 +328,12 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
             filter: saturate(1.08) contrast(1.04);
         }
 
-        .atlas-pin.is-photo {
-            background-position: center;
-            background-size: cover;
+        .atlas-pin.is-item {
+            background: var(--m4w-accent-2);
         }
 
-        .atlas-pin.is-photo::after {
-            content: "";
-            position: absolute;
-            inset: -4px;
-            border: 2px solid rgba(21, 58, 91, .9);
-            border-radius: inherit;
-            pointer-events: none;
+        .atlas-pin.is-bubble {
+            background: var(--m4w-accent);
         }
 
         .atlas-map-label {
@@ -519,11 +436,34 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
 
             const hideFallback = () => fallback.classList.add("is-hidden");
 
-            const markerHtml = (row) => {
-                if (row.kind === "item" && row.iconUrl) {
-                    return `<span class="atlas-pin is-photo" style="background-image:url('${escapeHtml(row.iconUrl)}')" aria-hidden="true"></span>`;
+            const navigateInsideApp = (href) => {
+                const target = new URL(href, window.parent.location.href);
+                try {
+                    window.parent.history.pushState({ source: "collection-map" }, "", target.href);
+                    window.parent.location.reload();
+                    return true;
+                } catch (error) {
+                    return false;
                 }
-                return `<span class="atlas-pin is-bubble" aria-hidden="true">${escapeHtml(row.countText)}</span>`;
+            };
+
+            document.addEventListener("click", (event) => {
+                const action = event.target.closest("[data-map-href]");
+                if (!action) {
+                    return;
+                }
+
+                const href = action.getAttribute("data-map-href") || action.getAttribute("href");
+                if (href && navigateInsideApp(href)) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            });
+
+            const markerHtml = (row) => {
+                const markerClass = row.kind === "item" ? "is-item" : "is-bubble";
+                const markerText = row.kind === "item" ? "1" : row.countText;
+                return `<span class="atlas-pin ${markerClass}" aria-hidden="true">${escapeHtml(markerText)}</span>`;
             };
 
             const popupHtml = (row) => `
@@ -532,7 +472,7 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
                     <p class="atlas-popup-meta">${escapeHtml(row.count)} pieza(s) &middot; ${escapeHtml(row.typeLabel)}</p>
                     <p class="atlas-popup-meta">${escapeHtml(row.minerals)}</p>
                     <p class="atlas-popup-note">${escapeHtml(row.note)}</p>
-                    <a class="atlas-popup-action" href="${escapeHtml(row.href)}" target="_top" rel="noopener">${escapeHtml(row.action)}</a>
+                    <a class="atlas-popup-action" href="${escapeHtml(row.href)}" data-map-href="${escapeHtml(row.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.action)}</a>
                 </article>
             `;
 
@@ -551,13 +491,20 @@ def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_t
                     zoom: 2,
                     minZoom: 2,
                     maxZoom: 18,
+                    preferCanvas: true,
                     worldCopyJump: true,
                     scrollWheelZoom: true,
+                    fadeAnimation: false,
+                    markerZoomAnimation: false,
                     zoomControl: true
                 });
 
                 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
                     maxZoom: 19,
+                    detectRetina: false,
+                    keepBuffer: 2,
+                    updateWhenIdle: true,
+                    updateWhenZooming: false,
                     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
                 }).addTo(map);
 
@@ -693,7 +640,7 @@ try:
         sold = True
     selected_item_type = item_type_from_filter(type_filter)
 
-    items = list_collection_items(
+    items = list_collection_map_items(
         db,
         sold=sold,
         item_type=selected_item_type,

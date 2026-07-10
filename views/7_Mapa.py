@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections import OrderedDict
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
 
 from src.crud import list_collection_items, option_lists
@@ -21,40 +23,6 @@ from src.item_types import (
 from src.localities import locality_coordinate_guess, locality_label, locality_normalized_key, normalized_text_key
 from src.navigation import switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
-
-
-WORLD_MAP_SVG = """
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" preserveAspectRatio="none">
-  <defs>
-    <linearGradient id="ocean" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#dbe8ee"/>
-      <stop offset="1" stop-color="#c7d9e1"/>
-    </linearGradient>
-    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#153a5b" flood-opacity=".14"/>
-    </filter>
-  </defs>
-  <rect width="1000" height="500" fill="url(#ocean)"/>
-  <g fill="none" stroke="#fffaf2" stroke-width="1" opacity=".38">
-    <path d="M0 125H1000M0 250H1000M0 375H1000"/>
-    <path d="M125 0V500M250 0V500M375 0V500M500 0V500M625 0V500M750 0V500M875 0V500"/>
-  </g>
-  <g filter="url(#softShadow)" fill="#d5bf99" stroke="#8f764e" stroke-width="2.4" stroke-linejoin="round">
-    <path d="M74 138 C120 92 189 72 248 89 C282 100 313 126 329 156 C307 167 281 171 260 192 C236 216 232 251 205 268 C174 288 130 274 111 245 C94 220 95 190 74 138Z"/>
-    <path d="M251 262 C289 272 318 303 316 343 C314 390 281 432 256 475 C220 426 199 382 209 336 C217 300 228 278 251 262Z"/>
-    <path d="M411 133 C448 101 509 90 568 110 C620 128 676 120 726 137 C779 154 828 187 870 222 C838 249 776 256 721 242 C679 231 646 250 607 242 C565 235 535 201 493 199 C457 197 419 188 396 163 C386 151 392 142 411 133Z"/>
-    <path d="M503 210 C543 205 580 231 594 273 C606 312 587 354 559 397 C526 360 493 318 488 278 C485 249 490 226 503 210Z"/>
-    <path d="M802 321 C838 303 881 312 910 340 C895 372 856 387 818 374 C795 366 787 341 802 321Z"/>
-    <path d="M889 414 C909 405 930 411 940 428 C925 443 901 445 884 434 C875 427 879 419 889 414Z"/>
-    <path d="M462 124 C481 114 506 116 522 132 C502 145 476 145 462 124Z"/>
-    <path d="M302 112 C321 101 345 105 359 122 C341 136 316 133 302 112Z"/>
-  </g>
-</svg>
-"""
-
-
-def world_map_data_uri() -> str:
-    return f"data:image/svg+xml;charset=utf-8,{quote(WORLD_MAP_SVG)}"
 
 
 class LocationGroup:
@@ -283,14 +251,6 @@ def build_marker_rows(groups: list[LocationGroup]) -> tuple[list[dict], list[dic
     return single_rows, bubble_rows
 
 
-def projected_position(row: dict) -> tuple[float, float]:
-    longitude = min(max(float(row["longitude"]), -180), 180)
-    latitude = min(max(float(row["latitude"]), -82), 85)
-    x = (longitude + 180) / 360 * 100
-    y = (90 - latitude) / 180 * 100
-    return min(max(x, 3), 97), min(max(y, 5), 95)
-
-
 def map_marker_href(row: dict, selected_item_type: str | None) -> str:
     params = {"map_zona": row["label"]}
     if row["target_kind"] == "item":
@@ -304,158 +264,389 @@ def map_marker_href(row: dict, selected_item_type: str | None) -> str:
     return "/?" + urlencode(params)
 
 
+def short_map_label(label: str, limit: int = 30) -> str:
+    clean = str(label or "").strip()
+    if len(clean) <= limit:
+        return clean
+    return clean[: limit - 1].rstrip() + "..."
+
+
+def script_json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=True).replace("</", "<\\/")
+
+
+def leaflet_marker_payload(row: dict, selected_item_type: str | None) -> dict:
+    return {
+        "lat": float(row["latitude"]),
+        "lon": float(row["longitude"]),
+        "label": row["label"],
+        "shortLabel": short_map_label(row["label"]),
+        "count": int(row["count"]),
+        "countText": str(row["count_text"]),
+        "typeLabel": row["type_label"],
+        "minerals": row["minerals"],
+        "itemCodes": row["item_codes"],
+        "note": row["coordinate_note"],
+        "href": map_marker_href(row, selected_item_type),
+        "action": row["action"],
+        "kind": row["target_kind"],
+        "iconUrl": row.get("icon_data", {}).get("url") if row["target_kind"] == "item" else "",
+    }
+
+
 def render_map(single_rows: list[dict], bubble_rows: list[dict], selected_item_type: str | None) -> None:
     rows = [*bubble_rows, *single_rows]
-    markers = []
-    world_map = world_map_data_uri()
-
-    for row in rows:
-        x, y = projected_position(row)
-        href = map_marker_href(row, selected_item_type)
-        title = (
-            f"{row['label']} · {row['count']} pieza(s) · "
-            f"{row['type_label']} · {row['coordinate_note']}"
-        )
-        if row["target_kind"] == "item":
-            image_url = row["icon_data"]["url"]
-            marker_inner = (
-                f'<span class="atlas-photo" style="background-image: url({escape_html(image_url)});"></span>'
-            )
-            marker_class = "is-photo"
-        else:
-            marker_inner = f'<span class="atlas-count">{escape_html(row["count_text"])}</span>'
-            marker_class = "is-bubble"
-
-        markers.append(
-            f'<a class="atlas-marker {marker_class}" href="{escape_html(href)}" '
-            f'style="left:{x:.3f}%; top:{y:.3f}%;" title="{escape_html(title)}">'
-            f'{marker_inner}<span class="atlas-label">{escape_html(row["label"])}</span></a>'
-        )
-
-    render_html(
-        f"""
+    map_rows_json = script_json([leaflet_marker_payload(row, selected_item_type) for row in rows])
+    map_html = """
+    <!doctype html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
         <style>
-        .atlas-map {{
+        :root {
+            --m4w-accent: #153a5b;
+            --m4w-accent-2: #1e5080;
+            --m4w-border: #c4a882;
+            --m4w-surface: #fffaf2;
+            --m4w-surface-muted: #ede8de;
+            --m4w-text: #3c2f2f;
+            --m4w-text-light: #6b4e2e;
+            --marker-scale: 1;
+            --label-size: 12px;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: transparent;
+            color: var(--m4w-text);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            letter-spacing: 0;
+            overflow: hidden;
+        }
+
+        .map-shell {
             position: relative;
-            aspect-ratio: 2 / 1;
-            min-height: 420px;
-            margin: .8rem 0 1.1rem;
+            width: 100%;
+            height: 610px;
             overflow: hidden;
             border: 1px solid var(--m4w-border);
             border-radius: 8px;
             background: #dbe8ee;
-            box-shadow: var(--m4w-shadow-soft);
-        }}
+            box-sizing: border-box;
+        }
 
-        .atlas-world-map {{
-            position: absolute;
-            inset: 0;
+        #collection-map {
             width: 100%;
             height: 100%;
-            object-fit: fill;
-            filter: saturate(.98) contrast(1.02);
-            pointer-events: none;
-            user-select: none;
-        }}
+            background: #dbe8ee;
+        }
 
-        .atlas-map::after {{
-            content: "Mapa del mundo · clic en burbuja o foto";
+        .map-fallback {
             position: absolute;
-            left: 1rem;
-            bottom: .85rem;
-            padding: .35rem .55rem;
-            border: 1px solid rgba(21,58,91,.18);
-            border-radius: 8px;
-            background: rgba(255,250,242,.86);
+            inset: 0;
+            z-index: 600;
+            display: grid;
+            place-items: center;
+            padding: 1rem;
+            background: rgba(255, 250, 242, .92);
             color: var(--m4w-text-light);
-            font-size: .78rem;
+            font-size: .92rem;
             font-weight: 750;
-        }}
+            text-align: center;
+        }
 
-        .atlas-marker {{
-            position: absolute;
-            z-index: 2;
+        .map-fallback.is-hidden {
+            display: none;
+        }
+
+        .leaflet-container {
+            font: inherit;
+        }
+
+        .leaflet-control-attribution {
+            color: #334;
+            font-size: 10px;
+        }
+
+        .leaflet-control-attribution a {
+            color: var(--m4w-accent);
+        }
+
+        .atlas-div-icon {
+            background: transparent;
+            border: 0;
+        }
+
+        .atlas-pin {
+            position: relative;
             display: grid;
             place-items: center;
-            width: 4.4rem;
-            height: 4.4rem;
-            transform: translate(-50%, -50%);
-            color: #fffaf2;
-            text-decoration: none;
-            transition: transform .16s ease, filter .16s ease;
-        }}
-
-        .atlas-marker:hover {{
-            transform: translate(-50%, -50%) scale(1.07);
-            filter: saturate(1.08) contrast(1.04);
-        }}
-
-        .atlas-count,
-        .atlas-photo {{
-            display: grid;
-            place-items: center;
-            width: 3.65rem;
-            height: 3.65rem;
-            border: 4px solid rgba(255,250,242,.96);
+            width: calc(42px * var(--marker-scale));
+            height: calc(42px * var(--marker-scale));
+            border: 4px solid rgba(255, 250, 242, .96);
             border-radius: 999px;
-            box-shadow: 0 10px 24px rgba(21,58,91,.22);
-        }}
-
-        .atlas-count {{
             background: var(--m4w-accent);
+            box-shadow: 0 10px 24px rgba(21, 58, 91, .24);
             color: #fffaf2;
-            font-size: 1.35rem;
+            font-size: calc(16px * var(--marker-scale));
             font-weight: 850;
-        }}
+            line-height: 1;
+            transform: translate(-50%, -50%);
+            transition: transform .16s ease, filter .16s ease, width .16s ease, height .16s ease;
+        }
 
-        .atlas-photo {{
+        .atlas-pin:hover {
+            transform: translate(-50%, -50%) scale(1.08);
+            filter: saturate(1.08) contrast(1.04);
+        }
+
+        .atlas-pin.is-photo {
             background-position: center;
             background-size: cover;
-        }}
+        }
 
-        .atlas-label {{
+        .atlas-pin.is-photo::after {
+            content: "";
             position: absolute;
-            top: calc(100% - .1rem);
-            left: 50%;
-            max-width: 9.5rem;
-            transform: translateX(-50%);
-            padding: .24rem .45rem;
-            border: 1px solid rgba(196,168,130,.82);
+            inset: -4px;
+            border: 2px solid rgba(21, 58, 91, .9);
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
+        .atlas-map-label {
+            max-width: 180px;
+            overflow: hidden;
+            border: 1px solid rgba(196, 168, 130, .82);
             border-radius: 8px;
-            background: rgba(255,250,242,.92);
+            background: rgba(255, 250, 242, .94);
             color: var(--m4w-text);
-            font-size: .78rem;
+            box-shadow: 0 5px 14px rgba(21, 58, 91, .14);
+            font-size: var(--label-size);
             font-weight: 800;
             line-height: 1.15;
             text-align: center;
-            white-space: normal;
-        }}
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
-        @media (max-width: 760px) {{
-            .atlas-map {{
-                min-height: 310px;
-            }}
-            .atlas-marker {{
-                width: 3.6rem;
-                height: 3.6rem;
-            }}
-            .atlas-count,
-            .atlas-photo {{
-                width: 3.05rem;
-                height: 3.05rem;
-            }}
-            .atlas-label {{
-                max-width: 7.2rem;
-                font-size: .72rem;
-            }}
-        }}
+        .atlas-map-label::before {
+            display: none;
+        }
+
+        .atlas-popup {
+            min-width: 210px;
+            max-width: 260px;
+        }
+
+        .atlas-popup-title {
+            margin: 0 0 .25rem;
+            color: var(--m4w-accent);
+            font-size: .98rem;
+            font-weight: 850;
+            line-height: 1.18;
+        }
+
+        .atlas-popup-meta,
+        .atlas-popup-note {
+            margin: .24rem 0 0;
+            color: var(--m4w-text-light);
+            font-size: .8rem;
+            font-weight: 650;
+            line-height: 1.3;
+        }
+
+        .atlas-popup-action {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 34px;
+            margin-top: .7rem;
+            padding: .25rem .68rem;
+            border: 1px solid var(--m4w-accent);
+            border-radius: 8px;
+            background: var(--m4w-accent);
+            color: #fffaf2 !important;
+            font-size: .82rem;
+            font-weight: 800;
+            line-height: 1.1;
+            text-decoration: none;
+        }
+
+        .atlas-popup-action:hover {
+            background: #0f2c45;
+            border-color: #0f2c45;
+        }
+
+        @media (max-width: 760px) {
+            .atlas-map-label {
+                max-width: 130px;
+            }
+        }
         </style>
-        <section class="atlas-map" aria-label="Mapa de lugares de la colección">
-            <img class="atlas-world-map" src="{escape_html(world_map)}" alt="" aria-hidden="true">
-            {"".join(markers)}
-        </section>
-        """
-    )
+    </head>
+    <body>
+        <div class="map-shell">
+            <div id="collection-map" aria-label="Mapa real de lugares de la coleccion"></div>
+            <div id="map-fallback" class="map-fallback">Cargando mapa real...</div>
+        </div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+        (() => {
+            const rows = __MAP_ROWS__;
+            const shell = document.querySelector(".map-shell");
+            const fallback = document.getElementById("map-fallback");
+
+            const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;"
+            }[character]));
+
+            const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), maximum);
+
+            const showFallback = (message) => {
+                fallback.textContent = message;
+                fallback.classList.remove("is-hidden");
+            };
+
+            const hideFallback = () => fallback.classList.add("is-hidden");
+
+            const markerHtml = (row) => {
+                if (row.kind === "item" && row.iconUrl) {
+                    return `<span class="atlas-pin is-photo" style="background-image:url('${escapeHtml(row.iconUrl)}')" aria-hidden="true"></span>`;
+                }
+                return `<span class="atlas-pin is-bubble" aria-hidden="true">${escapeHtml(row.countText)}</span>`;
+            };
+
+            const popupHtml = (row) => `
+                <article class="atlas-popup">
+                    <h3 class="atlas-popup-title">${escapeHtml(row.label)}</h3>
+                    <p class="atlas-popup-meta">${escapeHtml(row.count)} pieza(s) &middot; ${escapeHtml(row.typeLabel)}</p>
+                    <p class="atlas-popup-meta">${escapeHtml(row.minerals)}</p>
+                    <p class="atlas-popup-note">${escapeHtml(row.note)}</p>
+                    <a class="atlas-popup-action" href="${escapeHtml(row.href)}" target="_top" rel="noopener">${escapeHtml(row.action)}</a>
+                </article>
+            `;
+
+            const initMap = () => {
+                if (!window.L) {
+                    showFallback("No se pudo cargar Leaflet. Revisa la conexion del navegador o el CDN.");
+                    return;
+                }
+                if (!rows.length) {
+                    showFallback("No hay ubicaciones mapeables para mostrar.");
+                    return;
+                }
+
+                const map = L.map("collection-map", {
+                    center: [20, 0],
+                    zoom: 2,
+                    minZoom: 2,
+                    maxZoom: 18,
+                    worldCopyJump: true,
+                    scrollWheelZoom: true,
+                    zoomControl: true
+                });
+
+                L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+                }).addTo(map);
+
+                const markerEntries = [];
+                const bounds = [];
+
+                rows.forEach((row) => {
+                    const marker = L.marker([row.lat, row.lon], {
+                        icon: L.divIcon({
+                            className: "atlas-div-icon",
+                            html: markerHtml(row),
+                            iconSize: [1, 1],
+                            iconAnchor: [0, 0]
+                        }),
+                        title: row.label
+                    }).addTo(map);
+
+                    marker.bindPopup(popupHtml(row), {
+                        closeButton: true,
+                        maxWidth: 280
+                    });
+
+                    markerEntries.push({ marker, row });
+                    bounds.push([row.lat, row.lon]);
+                });
+
+                if (bounds.length > 1) {
+                    map.fitBounds(bounds, {
+                        padding: [42, 42],
+                        maxZoom: 6
+                    });
+                } else {
+                    map.setView(bounds[0], 5);
+                }
+
+                const labelZoom = rows.length > 35 ? 8 : rows.length > 14 ? 7 : 6;
+
+                const updateDensity = () => {
+                    const zoom = map.getZoom();
+                    const scale = clamp(.72 + zoom * .055, .84, 1.24);
+                    const labelSize = clamp(9.5 + zoom * .34, 10, 13);
+                    shell.style.setProperty("--marker-scale", scale.toFixed(2));
+                    shell.style.setProperty("--label-size", `${labelSize.toFixed(1)}px`);
+
+                    markerEntries.forEach(({ marker, row }) => {
+                        const existingTooltip = marker.getTooltip();
+                        if (zoom < labelZoom) {
+                            if (existingTooltip) {
+                                marker.unbindTooltip();
+                            }
+                            return;
+                        }
+
+                        const label = zoom >= labelZoom + 2 ? row.label : row.shortLabel;
+                        if (existingTooltip) {
+                            marker.setTooltipContent(escapeHtml(label));
+                        } else {
+                            marker.bindTooltip(escapeHtml(label), {
+                                className: "atlas-map-label",
+                                direction: "top",
+                                offset: [0, -24],
+                                opacity: 1,
+                                permanent: true
+                            });
+                        }
+                    });
+                };
+
+                map.on("zoomend", updateDensity);
+                map.on("moveend", updateDensity);
+                setTimeout(() => {
+                    map.invalidateSize();
+                    updateDensity();
+                    hideFallback();
+                }, 100);
+            };
+
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", initMap);
+            } else {
+                initMap();
+            }
+        })();
+        </script>
+    </body>
+    </html>
+    """.replace("__MAP_ROWS__", map_rows_json)
+
+    components.html(map_html, height=622, scrolling=False)
 
 
 def open_item(item_code: str) -> None:

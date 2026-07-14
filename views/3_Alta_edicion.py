@@ -8,9 +8,9 @@ from src.db import get_session, UPLOAD_DIR
 from src.crud import delete_collection_item, generate_next_item_code
 from src.item_types import ITEM_TYPE_LABELS, item_type_label, normalize_item_type
 from src.item_images import move_image, normalize_image_order, ordered_images
-from src.localities import get_or_create_locality, has_locality_data
+from src.localities import get_or_create_locality, has_locality_data, locality_label
 from src.mindat_api import MindatConfigError, get_mindat_locality_data
-from src.models import MineralSpecies, CollectionItem, ItemImage
+from src.models import MineralSpecies, CollectionItem, ItemImage, Locality
 from src.image_utils import ImageUploadError, save_uploaded_images
 from src.ui import (
     render_page_header,
@@ -20,17 +20,16 @@ from src.ui import (
 )
 
 
+NEW_LOCALITY_OPTION = "__new_locality__"
+NO_LOCALITY_OPTION = "__no_locality__"
+LOCALITY_OPTION_PREFIX = "locality:"
+
+
 def clean_text(value: str | None) -> str | None:
     if not value:
         return None
     value = value.strip()
     return value or None
-
-
-def format_coordinate(value: float | None) -> str:
-    if value is None:
-        return ""
-    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def parse_coordinate(value: str, label: str, minimum: float, maximum: float) -> float | None:
@@ -59,6 +58,37 @@ def parse_optional_positive_int(value: str, label: str) -> int | None:
     if parsed <= 0:
         raise ValueError(f"{label} debe ser un numero entero positivo.")
     return parsed
+
+
+def locality_option_value(locality_id: int) -> str:
+    return f"{LOCALITY_OPTION_PREFIX}{locality_id}"
+
+
+def locality_id_from_option(option: str) -> int | None:
+    if not option.startswith(LOCALITY_OPTION_PREFIX):
+        return None
+    try:
+        return int(option.removeprefix(LOCALITY_OPTION_PREFIX))
+    except ValueError:
+        return None
+
+
+def locality_option_label(option: str, locality_by_id: dict[int, Locality]) -> str:
+    if option == NEW_LOCALITY_OPTION:
+        return "Añadir nueva localidad…"
+    if option == NO_LOCALITY_OPTION:
+        return "Sin localidad"
+
+    locality_id = locality_id_from_option(option)
+    if locality_id not in locality_by_id:
+        return option
+    locality = locality_by_id[locality_id]
+    identifier = (
+        f"Mindat {locality.mindat_locality_id}"
+        if locality.mindat_locality_id
+        else f"ID {locality.id}"
+    )
+    return f"{locality_label(locality)} · {identifier}"
 
 
 def enrich_locality_from_mindat(
@@ -102,6 +132,7 @@ def enrich_locality_from_mindat(
 def apply_locality(
     db,
     item: CollectionItem,
+    existing_locality: Locality | None,
     mindat_locality_id: int | None,
     locality_name: str,
     mine: str,
@@ -110,6 +141,10 @@ def apply_locality(
     latitude: float | None,
     longitude: float | None,
 ) -> None:
+    if existing_locality is not None:
+        item.locality = existing_locality
+        return
+
     if not has_locality_data(locality_name, mine, region, country, latitude, longitude, mindat_locality_id):
         item.locality = None
         return
@@ -137,6 +172,7 @@ def apply_item_values(
     sold: bool,
     sold_at,
     purchase_link: str,
+    existing_locality: Locality | None,
     mindat_locality_id: int | None,
     locality_name: str,
     mine: str,
@@ -161,7 +197,18 @@ def apply_item_values(
     item.special_features = clean_text(special_features)
     item.secondary_minerals = clean_text(secondary_minerals)
     item.notes = clean_text(notes)
-    apply_locality(db, item, mindat_locality_id, locality_name, mine, region, country, latitude, longitude)
+    apply_locality(
+        db,
+        item,
+        existing_locality,
+        mindat_locality_id,
+        locality_name,
+        mine,
+        region,
+        country,
+        latitude,
+        longitude,
+    )
 
 
 def item_label(item: CollectionItem) -> str:
@@ -258,6 +305,8 @@ if deleted_message := st.session_state.pop("item_deleted_message", None):
     st.success(deleted_message)
 if delete_warnings := st.session_state.pop("item_delete_warnings", None):
     st.warning("La pieza se borro, pero algunas fotos no se pudieron eliminar:\n" + "\n".join(delete_warnings))
+if updated_message := st.session_state.pop("item_updated_message", None):
+    st.success(updated_message)
 
 db = get_session()
 try:
@@ -268,6 +317,25 @@ try:
     if not mineral_names:
         st.warning("Primero crea o importa minerales desde Admin datos o Importar API.")
         st.stop()
+
+    localities = (
+        db.execute(
+            select(Locality).order_by(
+                Locality.country,
+                Locality.region,
+                Locality.mine,
+                Locality.name,
+                Locality.id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    locality_by_id = {
+        locality.id: locality
+        for locality in localities
+        if locality.id is not None
+    }
 
     items = (
         db.execute(
@@ -320,7 +388,38 @@ try:
     item_type_values = list(ITEM_TYPE_LABELS.keys())
     default_item_type = normalize_item_type(item.item_type if item else None)
     default_item_type_index = item_type_values.index(default_item_type)
-    locality = item.locality if item else None
+
+    locality_options = [NEW_LOCALITY_OPTION, NO_LOCALITY_OPTION]
+    locality_options.extend(locality_option_value(locality_id) for locality_id in locality_by_id)
+    if item and item.locality_id in locality_by_id:
+        default_locality_option = locality_option_value(item.locality_id)
+    elif item:
+        default_locality_option = NO_LOCALITY_OPTION
+    else:
+        default_locality_option = NEW_LOCALITY_OPTION
+
+    locality_choice_key = f"locality_choice_{form_suffix}"
+    pending_locality_choice_key = f"pending_{locality_choice_key}"
+    pending_locality_option = st.session_state.pop(pending_locality_choice_key, None)
+    if pending_locality_option in locality_options:
+        st.session_state[locality_choice_key] = pending_locality_option
+
+    render_section_heading(
+        "Localidad de la pieza",
+        "Elige una localidad guardada o añade una nueva para reutilizarla en otras piezas.",
+    )
+    # Outside the form so changing the option immediately shows or hides the new-locality fields.
+    locality_option = st.selectbox(
+        "Localidad",
+        locality_options,
+        index=locality_options.index(default_locality_option),
+        format_func=lambda option: locality_option_label(option, locality_by_id),
+        key=locality_choice_key,
+        help="Las localidades existentes se vinculan sin modificar sus datos.",
+    )
+    creating_locality = locality_option == NEW_LOCALITY_OPTION
+    selected_locality_id = locality_id_from_option(locality_option)
+    existing_locality = locality_by_id.get(selected_locality_id)
 
     with st.form(f"item_form_{form_suffix}", clear_on_submit=False):
         c1, c2 = st.columns(2)
@@ -379,45 +478,52 @@ try:
                 key=f"purchase_link_{form_suffix}",
             )
         with c2:
-            mindat_locality_id_text = st.text_input(
-                "ID localidad Mindat",
-                value=str(locality.mindat_locality_id) if locality and locality.mindat_locality_id else "",
-                placeholder="Ej: 12345",
-                key=f"mindat_locality_id_{form_suffix}",
-            )
-            country = st.text_input(
-                "Pais",
-                value=locality.country if locality and locality.country else "",
-                key=f"country_{form_suffix}",
-            )
-            region = st.text_input(
-                "Region",
-                value=locality.region if locality and locality.region else "",
-                key=f"region_{form_suffix}",
-            )
-            mine = st.text_input(
-                "Mina / yacimiento",
-                value=locality.mine if locality and locality.mine else "",
-                key=f"mine_{form_suffix}",
-            )
-            locality_name = st.text_input(
-                "Nombre localidad",
-                value=locality.name if locality and locality.name else "",
-                key=f"locality_{form_suffix}",
-            )
-            lat_col, lon_col = st.columns(2)
-            latitude_text = lat_col.text_input(
-                "Latitud",
-                value=format_coordinate(locality.latitude) if locality else "",
-                placeholder="Ej: 40.4168",
-                key=f"latitude_{form_suffix}",
-            )
-            longitude_text = lon_col.text_input(
-                "Longitud",
-                value=format_coordinate(locality.longitude) if locality else "",
-                placeholder="Ej: -3.7038",
-                key=f"longitude_{form_suffix}",
-            )
+            mindat_locality_id_text = ""
+            country = ""
+            region = ""
+            mine = ""
+            locality_name = ""
+            latitude_text = ""
+            longitude_text = ""
+
+            if creating_locality:
+                mindat_locality_id_text = st.text_input(
+                    "ID localidad Mindat",
+                    placeholder="Ej: 12345",
+                    key=f"mindat_locality_id_{form_suffix}",
+                )
+                country = st.text_input(
+                    "País",
+                    key=f"country_{form_suffix}",
+                )
+                region = st.text_input(
+                    "Región",
+                    key=f"region_{form_suffix}",
+                )
+                mine = st.text_input(
+                    "Mina / yacimiento",
+                    key=f"mine_{form_suffix}",
+                )
+                locality_name = st.text_input(
+                    "Nombre localidad",
+                    key=f"locality_{form_suffix}",
+                )
+                lat_col, lon_col = st.columns(2)
+                latitude_text = lat_col.text_input(
+                    "Latitud",
+                    placeholder="Ej: 40.4168",
+                    key=f"latitude_{form_suffix}",
+                )
+                longitude_text = lon_col.text_input(
+                    "Longitud",
+                    placeholder="Ej: -3.7038",
+                    key=f"longitude_{form_suffix}",
+                )
+            elif existing_locality is not None:
+                st.info(f"Se usará: {locality_label(existing_locality)}")
+            else:
+                st.info("La pieza se guardará sin localidad.")
+
             acquisition_source = st.text_input(
                 "Proveedor / origen adquisicion",
                 value=item.acquisition_source if item and item.acquisition_source else "",
@@ -457,28 +563,33 @@ try:
 
     if submitted:
         mineral = mineral_by_name[mineral_name]
-        try:
-            mindat_locality_id = parse_optional_positive_int(
-                mindat_locality_id_text,
-                "ID localidad Mindat",
+        mindat_locality_id = None
+        latitude = None
+        longitude = None
+
+        if creating_locality:
+            try:
+                mindat_locality_id = parse_optional_positive_int(
+                    mindat_locality_id_text,
+                    "ID localidad Mindat",
+                )
+                latitude = parse_coordinate(latitude_text, "Latitud", -90, 90)
+                longitude = parse_coordinate(longitude_text, "Longitud", -180, 180)
+            except ValueError as exc:
+                st.error(str(exc))
+                st.stop()
+            locality_name, mine, region, country, latitude, longitude = enrich_locality_from_mindat(
+                mindat_locality_id,
+                locality_name,
+                mine,
+                region,
+                country,
+                latitude,
+                longitude,
             )
-            latitude = parse_coordinate(latitude_text, "Latitud", -90, 90)
-            longitude = parse_coordinate(longitude_text, "Longitud", -180, 180)
-        except ValueError as exc:
-            st.error(str(exc))
-            st.stop()
-        locality_name, mine, region, country, latitude, longitude = enrich_locality_from_mindat(
-            mindat_locality_id,
-            locality_name,
-            mine,
-            region,
-            country,
-            latitude,
-            longitude,
-        )
-        if (latitude is None) != (longitude is None):
-            st.error("Para ubicar la pieza en el mapa, rellena latitud y longitud.")
-            st.stop()
+            if (latitude is None) != (longitude is None):
+                st.error("Para ubicar la pieza en el mapa, rellena latitud y longitud.")
+                st.stop()
 
         if editing:
             if not item:
@@ -497,6 +608,7 @@ try:
                     sold,
                     sold_at,
                     purchase_link,
+                    existing_locality,
                     mindat_locality_id,
                     locality_name,
                     mine,
@@ -534,7 +646,16 @@ try:
 
             st.session_state["selected_item_code"] = item.item_code
             st.session_state["editing_item_code"] = item.item_code
-            st.success(f"Pieza {item.item_code} actualizada con {len(saved_paths)} foto(s) nueva(s).")
+            updated_message = (
+                f"Pieza {item.item_code} actualizada con {len(saved_paths)} foto(s) nueva(s)."
+            )
+            if creating_locality and item.locality_id:
+                st.session_state[pending_locality_choice_key] = locality_option_value(
+                    item.locality_id
+                )
+                st.session_state["item_updated_message"] = updated_message
+                st.rerun()
+            st.success(updated_message)
         else:
             saved_item_code = None
             saved_paths = []
@@ -543,6 +664,7 @@ try:
                 try:
                     item_code = generate_next_item_code(db)
                     new_item = CollectionItem(item_code=item_code.strip(), sold=sold)
+                    db.add(new_item)
                     apply_item_values(
                         db,
                         new_item,
@@ -554,6 +676,7 @@ try:
                         sold,
                         sold_at,
                         purchase_link,
+                        existing_locality,
                         mindat_locality_id,
                         locality_name,
                         mine,
@@ -566,7 +689,6 @@ try:
                         sale_price,
                         notes,
                     )
-                    db.add(new_item)
                     db.flush()
 
                     saved_paths = save_uploaded_images(new_item.item_code, photos)

@@ -51,6 +51,14 @@ def prepare_database(monkeypatch, tmp_path):
             item_code="MIN-0001",
             mineral=mineral,
             locality=current_locality,
+            display_name="Cuarzo plantilla",
+            secondary_minerals="Calcita",
+            special_features="Cristales brillantes",
+            acquisition_source="Proveedor habitual",
+            purchase_price=25.0,
+            sale_price=60.0,
+            purchase_link="https://example.com/anuncio",
+            notes="Datos reutilizables",
             sold=False,
         )
         db.add_all([item, other_locality])
@@ -93,6 +101,18 @@ def test_add_form_can_select_an_existing_or_create_a_new_locality(monkeypatch, t
 
         widget_with_label(app.button, "Guardar pieza").click().run(timeout=10)
         assert len(app.exception) == 0
+        assert widget_with_label(
+            app.selectbox,
+            "Rellenar desde una pieza anterior (opcional)",
+        ).value == "__empty_item_template__"
+        assert widget_with_label(app.selectbox, "Localidad").value == NEW_LOCALITY_OPTION
+        assert widget_with_label(app.text_input, "Nombre visible").value == ""
+        assert widget_with_label(app.text_area, "Minerales secundarios").value == ""
+        assert widget_with_label(app.number_input, "Precio compra").value == 0.0
+        assert any(
+            "formulario ya esta listo" in message.value
+            for message in app.success
+        )
 
         with test_session() as db:
             created = db.scalar(
@@ -116,6 +136,56 @@ def test_add_form_can_select_an_existing_or_create_a_new_locality(monkeypatch, t
             assert created.locality is not None
             assert created.locality.name == "Sintra"
             assert created.locality.country == "Portugal"
+    finally:
+        engine.dispose()
+
+
+def test_add_form_can_copy_all_information_from_a_previous_item(monkeypatch, tmp_path):
+    engine, test_session, (current_locality_id, _) = prepare_database(monkeypatch, tmp_path)
+    try:
+        app = run_admin_page()
+        template_select = widget_with_label(
+            app.selectbox,
+            "Rellenar desde una pieza anterior (opcional)",
+        )
+
+        template_select.set_value("MIN-0001").run(timeout=10)
+
+        assert len(app.exception) == 0
+        assert widget_with_label(app.selectbox, "Localidad").value == locality_option(
+            current_locality_id
+        )
+        assert widget_with_label(app.text_input, "Nombre visible").value == "Cuarzo plantilla"
+        assert widget_with_label(app.text_area, "Minerales secundarios").value == "Calcita"
+        assert (
+            widget_with_label(app.text_area, "Caracteristicas especiales").value
+            == "Cristales brillantes"
+        )
+        assert (
+            widget_with_label(app.text_input, "Proveedor / origen adquisicion").value
+            == "Proveedor habitual"
+        )
+        assert widget_with_label(app.number_input, "Precio compra").value == 25.0
+        assert widget_with_label(app.number_input, "Precio venta").value == 60.0
+        assert widget_with_label(app.text_area, "Notas internas").value == "Datos reutilizables"
+
+        widget_with_label(app.button, "Guardar pieza").click().run(timeout=10)
+        assert len(app.exception) == 0
+
+        with test_session() as db:
+            created = db.scalar(
+                select(CollectionItem).where(CollectionItem.item_code == "MIN-0002")
+            )
+            assert created is not None
+            assert created.locality_id == current_locality_id
+            assert created.display_name == "Cuarzo plantilla"
+            assert created.secondary_minerals == "Calcita"
+            assert created.special_features == "Cristales brillantes"
+            assert created.acquisition_source == "Proveedor habitual"
+            assert created.purchase_price == 25.0
+            assert created.sale_price == 60.0
+            assert created.purchase_link == "https://example.com/anuncio"
+            assert created.notes == "Datos reutilizables"
     finally:
         engine.dispose()
 

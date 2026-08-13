@@ -23,6 +23,36 @@ from src.ui import (
 NEW_LOCALITY_OPTION = "__new_locality__"
 NO_LOCALITY_OPTION = "__no_locality__"
 LOCALITY_OPTION_PREFIX = "locality:"
+EMPTY_ITEM_TEMPLATE_OPTION = "__empty_item_template__"
+NEW_ITEM_TEMPLATE_KEY = "new_item_template_choice"
+RESET_NEW_ITEM_FORM_KEY = "reset_new_item_form"
+NEW_ITEM_SAVED_MESSAGE_KEY = "new_item_saved_message"
+
+NEW_ITEM_WIDGET_PREFIXES = (
+    "item_code_new_",
+    "display_name_new_",
+    "item_type_new_",
+    "mineral_new_",
+    "secondary_new_",
+    "features_new_",
+    "sold_new_",
+    "sold_at_new_",
+    "purchase_link_new_",
+    "mindat_locality_id_new_",
+    "country_new_",
+    "region_new_",
+    "mine_new_",
+    "locality_new_",
+    "latitude_new_",
+    "longitude_new_",
+    "source_new_",
+    "purchase_price_new_",
+    "sale_price_new_",
+    "notes_new_",
+    "photos_new_",
+    "locality_choice_new_",
+    "pending_locality_choice_new_",
+)
 
 
 def clean_text(value: str | None) -> str | None:
@@ -30,6 +60,17 @@ def clean_text(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def clear_new_item_form_state() -> None:
+    keys_to_remove = [
+        key
+        for key in st.session_state
+        if key == NEW_ITEM_TEMPLATE_KEY
+        or any(str(key).startswith(prefix) for prefix in NEW_ITEM_WIDGET_PREFIXES)
+    ]
+    for key in keys_to_remove:
+        st.session_state.pop(key, None)
 
 
 def parse_coordinate(value: str, label: str, minimum: float, maximum: float) -> float | None:
@@ -215,6 +256,20 @@ def item_label(item: CollectionItem) -> str:
     return f"{item.item_code} - {item.display_name or item.mineral.name}"
 
 
+def item_template_label(option: str, item_by_code: dict[str, CollectionItem]) -> str:
+    if option == EMPTY_ITEM_TEMPLATE_OPTION:
+        return "Empezar con el formulario vacio"
+
+    item = item_by_code.get(option)
+    if item is None:
+        return option
+
+    parts = [item_label(item)]
+    if item.locality is not None:
+        parts.append(locality_label(item.locality))
+    return " · ".join(parts)
+
+
 def render_delete_item_panel(db, item: CollectionItem) -> None:
     with st.expander("Borrar pieza / anuncio"):
         st.warning("Esta accion borra la pieza de la base de datos y elimina sus fotos guardadas.")
@@ -294,6 +349,9 @@ def render_photo_order_editor(db, item: CollectionItem) -> None:
 
 require_admin_access()
 
+if st.session_state.pop(RESET_NEW_ITEM_FORM_KEY, False):
+    clear_new_item_form_state()
+
 render_page_header(
     "Administracion",
     "Alta / edicion",
@@ -307,6 +365,8 @@ if delete_warnings := st.session_state.pop("item_delete_warnings", None):
     st.warning("La pieza se borro, pero algunas fotos no se pudieron eliminar:\n" + "\n".join(delete_warnings))
 if updated_message := st.session_state.pop("item_updated_message", None):
     st.success(updated_message)
+if saved_message := st.session_state.pop(NEW_ITEM_SAVED_MESSAGE_KEY, None):
+    st.success(saved_message)
 
 db = get_session()
 try:
@@ -351,6 +411,7 @@ try:
         .scalars()
         .all()
     )
+    item_by_code = {existing_item.item_code: existing_item for existing_item in items}
 
     requested_edit_code = st.session_state.get("editing_item_code")
     default_mode = "Editar existente" if requested_edit_code and items else "Alta nueva"
@@ -363,6 +424,8 @@ try:
     editing = mode == "Editar existente"
 
     item = None
+    template_item = None
+    template_option = EMPTY_ITEM_TEMPLATE_OPTION
     if editing:
         if not items:
             st.info("Todavia no hay piezas para editar.")
@@ -380,20 +443,44 @@ try:
         st.session_state["editing_item_code"] = item.item_code
         st.caption(f"Fotos actuales: {len(item.images)}. Puedes anadir mas fotos al guardar.")
         render_photo_order_editor(db, item)
+    elif items:
+        template_options = [EMPTY_ITEM_TEMPLATE_OPTION]
+        template_options.extend(existing_item.item_code for existing_item in items)
+        template_option = st.selectbox(
+            "Rellenar desde una pieza anterior (opcional)",
+            template_options,
+            format_func=lambda option: item_template_label(option, item_by_code),
+            key=NEW_ITEM_TEMPLATE_KEY,
+            help=(
+                "Copia los datos y la localidad de la pieza elegida. "
+                "Podras cambiar cualquier campo antes de guardar; las fotos no se copian."
+            ),
+        )
+        template_item = item_by_code.get(template_option)
+        if template_item is not None:
+            st.caption(
+                f"Usando {template_item.item_code} como plantilla. "
+                "Revisa los datos antes de guardar la nueva pieza."
+            )
 
     next_item_code = generate_next_item_code(db)
-    form_suffix = item.item_code if item else "new"
-    default_mineral = item.mineral.name if item else mineral_names[0]
+    form_source = item if editing else template_item
+    form_suffix = (
+        item.item_code
+        if item
+        else f"new_{template_option}"
+    )
+    default_mineral = form_source.mineral.name if form_source else mineral_names[0]
     default_mineral_index = mineral_names.index(default_mineral) if default_mineral in mineral_names else 0
     item_type_values = list(ITEM_TYPE_LABELS.keys())
-    default_item_type = normalize_item_type(item.item_type if item else None)
+    default_item_type = normalize_item_type(form_source.item_type if form_source else None)
     default_item_type_index = item_type_values.index(default_item_type)
 
     locality_options = [NEW_LOCALITY_OPTION, NO_LOCALITY_OPTION]
     locality_options.extend(locality_option_value(locality_id) for locality_id in locality_by_id)
-    if item and item.locality_id in locality_by_id:
-        default_locality_option = locality_option_value(item.locality_id)
-    elif item:
+    if form_source and form_source.locality_id in locality_by_id:
+        default_locality_option = locality_option_value(form_source.locality_id)
+    elif form_source:
         default_locality_option = NO_LOCALITY_OPTION
     else:
         default_locality_option = NEW_LOCALITY_OPTION
@@ -432,7 +519,7 @@ try:
             )
             display_name = st.text_input(
                 "Nombre visible",
-                value=item.display_name if item and item.display_name else "",
+                value=form_source.display_name if form_source and form_source.display_name else "",
                 key=f"display_name_{form_suffix}",
             )
             selected_item_type = st.selectbox(
@@ -450,23 +537,31 @@ try:
             )
             secondary_minerals = st.text_area(
                 "Minerales secundarios",
-                value=item.secondary_minerals if item and item.secondary_minerals else "",
+                value=(
+                    form_source.secondary_minerals
+                    if form_source and form_source.secondary_minerals
+                    else ""
+                ),
                 key=f"secondary_{form_suffix}",
             )
             special_features = st.text_area(
                 "Caracteristicas especiales",
-                value=item.special_features if item and item.special_features else "",
+                value=(
+                    form_source.special_features
+                    if form_source and form_source.special_features
+                    else ""
+                ),
                 key=f"features_{form_suffix}",
             )
             sold = st.checkbox(
                 "Vendido",
-                value=bool(item.sold) if item else False,
+                value=bool(form_source.sold) if form_source else False,
                 key=f"sold_{form_suffix}",
             )
             sold_at = (
                 st.date_input(
                     "Fecha venta",
-                    value=item.sold_at if item and item.sold_at else None,
+                    value=form_source.sold_at if form_source and form_source.sold_at else None,
                     key=f"sold_at_{form_suffix}",
                 )
                 if sold
@@ -474,7 +569,7 @@ try:
             )
             purchase_link = st.text_input(
                 "Link de compra / anuncio",
-                value=item.purchase_link if item and item.purchase_link else "",
+                value=form_source.purchase_link if form_source and form_source.purchase_link else "",
                 key=f"purchase_link_{form_suffix}",
             )
         with c2:
@@ -526,26 +621,30 @@ try:
 
             acquisition_source = st.text_input(
                 "Proveedor / origen adquisicion",
-                value=item.acquisition_source if item and item.acquisition_source else "",
+                value=(
+                    form_source.acquisition_source
+                    if form_source and form_source.acquisition_source
+                    else ""
+                ),
                 key=f"source_{form_suffix}",
             )
             purchase_price = st.number_input(
                 "Precio compra",
                 min_value=0.0,
                 step=1.0,
-                value=float(item.purchase_price or 0.0) if item else 0.0,
+                value=float(form_source.purchase_price or 0.0) if form_source else 0.0,
                 key=f"purchase_price_{form_suffix}",
             )
             sale_price = st.number_input(
                 "Precio venta",
                 min_value=0.0,
                 step=1.0,
-                value=float(item.sale_price or 0.0) if item else 0.0,
+                value=float(form_source.sale_price or 0.0) if form_source else 0.0,
                 key=f"sale_price_{form_suffix}",
             )
             notes = st.text_area(
                 "Notas internas",
-                value=item.notes if item and item.notes else "",
+                value=form_source.notes if form_source and form_source.notes else "",
                 key=f"notes_{form_suffix}",
             )
 
@@ -718,6 +817,11 @@ try:
             if saved_item_code:
                 st.session_state["selected_item_code"] = saved_item_code
                 st.session_state.pop("editing_item_code", None)
-                st.success(f"Pieza {saved_item_code} guardada con {len(saved_paths)} foto(s).")
+                st.session_state[NEW_ITEM_SAVED_MESSAGE_KEY] = (
+                    f"Pieza {saved_item_code} guardada con {len(saved_paths)} foto(s). "
+                    "El formulario ya esta listo para la siguiente alta."
+                )
+                st.session_state[RESET_NEW_ITEM_FORM_KEY] = True
+                st.rerun()
 finally:
     db.close()

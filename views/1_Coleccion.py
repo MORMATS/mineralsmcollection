@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.auth import admin_unlocked
 from src.crud import list_collection_items, option_lists
@@ -15,6 +16,11 @@ from src.item_types import (
     normalize_item_type,
 )
 from src.item_images import ordered_images
+from src.labels import (
+    generate_labels_pdf,
+    labels_preview_html,
+    mineral_label_from_item,
+)
 from src.navigation import clear_collection_filters, collection_filters, switch_to_admin_edit, switch_to_item
 from src.ui import (
     render_collection_card,
@@ -26,6 +32,8 @@ from src.ui import (
 
 GALLERY_PAGE_SIZE_OPTIONS = [12, 24, 48, "Todos"]
 DEFAULT_GALLERY_PAGE_SIZE = 24
+LABEL_SELECTION_KEY = "collection_label_selection"
+LABEL_PANEL_KEY = "collection_labels_open"
 
 
 def cover_image_path(item) -> Path | None:
@@ -106,6 +114,79 @@ def paginated_items(items: list) -> tuple[list, int, int, int | str]:
     )
     start = (int(page) - 1) * int(page_size)
     return items[start : start + int(page_size)], int(page), total_pages, page_size
+
+
+def render_labels_panel(items: list) -> None:
+    item_by_code = {item.item_code: item for item in items}
+    valid_codes = list(item_by_code)
+    current_selection = [
+        code
+        for code in st.session_state.get(LABEL_SELECTION_KEY, [])
+        if code in item_by_code
+    ]
+    st.session_state[LABEL_SELECTION_KEY] = current_selection
+
+    with st.container(border=True):
+        title_col, close_col = st.columns([5, 1])
+        with title_col:
+            render_section_heading(
+                "Etiquetas",
+                "Elige las piezas. Cada etiqueta mide exactamente 30 × 15 mm en el PDF.",
+                aside="Vista previa ×2",
+            )
+        if close_col.button("Cerrar", key="close_collection_labels", use_container_width=True):
+            st.session_state[LABEL_PANEL_KEY] = False
+            st.rerun()
+
+        action_col, clear_col = st.columns(2)
+        if action_col.button(
+            "Seleccionar todos",
+            key="select_all_collection_labels",
+            use_container_width=True,
+        ):
+            st.session_state[LABEL_SELECTION_KEY] = valid_codes
+            st.rerun()
+        if clear_col.button(
+            "Limpiar selección",
+            key="clear_collection_labels",
+            use_container_width=True,
+        ):
+            st.session_state[LABEL_SELECTION_KEY] = []
+            st.rerun()
+
+        selected_codes = st.multiselect(
+            "Minerales para imprimir",
+            valid_codes,
+            key=LABEL_SELECTION_KEY,
+            format_func=lambda code: f"{code} · {item_label(item_by_code[code])}",
+            placeholder="Selecciona una o varias piezas",
+        )
+        selected_labels = [
+            mineral_label_from_item(item_by_code[code]) for code in selected_codes
+        ]
+
+        if not selected_labels:
+            st.info("Selecciona al menos una pieza para ver sus etiquetas.")
+            return
+
+        st.caption(
+            f"Vista previa de {len(selected_labels)} etiqueta(s). "
+            "El PDF las distribuye en hojas A4, listas para imprimir al 100 % de escala."
+        )
+        components.html(
+            labels_preview_html(selected_labels),
+            height=500,
+            scrolling=False,
+        )
+        pdf_data = generate_labels_pdf(selected_labels)
+        st.download_button(
+            "Descargar PDF de etiquetas",
+            data=pdf_data,
+            file_name="etiquetas-minerales.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+        )
 
 
 render_page_header(
@@ -195,6 +276,18 @@ try:
     )
 
     if items:
+        labels_col, _ = st.columns([1, 4])
+        if labels_col.button(
+            "Labels",
+            icon=":material/label:",
+            use_container_width=True,
+            type="primary",
+            help="Seleccionar minerales y preparar etiquetas para imprimir.",
+        ):
+            st.session_state[LABEL_PANEL_KEY] = True
+        if st.session_state.get(LABEL_PANEL_KEY, False):
+            render_labels_panel(items)
+
         visible_items, current_page, total_pages, page_size = paginated_items(items)
         if total_pages > 1:
             st.caption(f"Mostrando {len(visible_items)} de {len(items)} piezas - pagina {current_page}/{total_pages}.")

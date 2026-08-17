@@ -10,7 +10,8 @@ import requests
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.models import MineralSpecies
+from src.localities import normalized_locality_values
+from src.models import Locality, MineralSpecies
 from src.settings import get_setting
 
 MINDAT_BASE = "https://api.mindat.org/v1"
@@ -335,17 +336,24 @@ def fetch_mindat_locality_detail(mindat_locality_id: int) -> dict | None:
 
 
 def normalize_mindat_locality_record(record: dict) -> dict:
+    mindat_locality_id = _to_int(_first(record, "id", "mindat_id", "locality_id"))
     latitude = _first_float(record, "latitude", "lat", "decimal_latitude")
     longitude = _first_float(record, "longitude", "long", "lng", "lon", "decimal_longitude")
+    source_url = _first_text(record, "url", "mindat_url", "source_url")
+    if not source_url and mindat_locality_id:
+        source_url = f"https://www.mindat.org/loc-{mindat_locality_id}.html"
 
     return {
-        "mindat_locality_id": _to_int(_first(record, "id", "mindat_id", "locality_id")),
+        "mindat_locality_id": mindat_locality_id,
         "name": _first_text(record, "name", "title", "locality_name", "locname"),
         "mine": _first_text(record, "mine", "minename", "deposit", "site"),
         "region": _first_text(record, "region", "province", "state", "district"),
         "country": _first_text(record, "country", "country_name"),
         "latitude": latitude,
         "longitude": longitude,
+        "notes": _first_text(record, "description", "notes", "summary", "txt"),
+        "source_url": source_url,
+        "api_raw_json": json.dumps(record, ensure_ascii=False),
     }
 
 
@@ -354,3 +362,39 @@ def get_mindat_locality_data(mindat_locality_id: int) -> dict | None:
     if not record:
         return None
     return normalize_mindat_locality_record(record)
+
+
+def update_mindat_locality(db: Session, locality: Locality) -> tuple[Locality, str]:
+    """Refresh a saved locality and keep the complete Mindat response."""
+    if not locality.mindat_locality_id:
+        raise ValueError("La localidad no tiene un ID de Mindat asignado.")
+
+    record = fetch_mindat_locality_detail(locality.mindat_locality_id)
+    if not record:
+        raise LookupError(
+            f"Mindat no devolvio datos para la localidad {locality.mindat_locality_id}."
+        )
+
+    data = normalize_mindat_locality_record(record)
+    locality_values = normalized_locality_values(
+        mindat_locality_id=locality.mindat_locality_id,
+        name=data.get("name") or locality.name,
+        mine=data.get("mine") or locality.mine,
+        region=data.get("region") or locality.region,
+        country=data.get("country") or locality.country,
+        latitude=data.get("latitude") if data.get("latitude") is not None else locality.latitude,
+        longitude=data.get("longitude") if data.get("longitude") is not None else locality.longitude,
+    )
+    for field, value in locality_values.items():
+        setattr(locality, field, value)
+    for field in ("notes", "source_url", "api_raw_json"):
+        value = data.get(field)
+        if value not in (None, ""):
+            setattr(locality, field, value)
+    locality.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    db.add(locality)
+    db.commit()
+    db.refresh(locality)
+    piece_count = len(locality.items)
+    return locality, f"Localizacion actualizada en {piece_count} pieza(s)."

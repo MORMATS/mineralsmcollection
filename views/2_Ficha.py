@@ -1,3 +1,6 @@
+import json
+import logging
+
 import streamlit as st
 
 from src.auth import admin_unlocked
@@ -5,6 +8,7 @@ from src.crud import get_item_by_code, normalize_item_code
 from src.db import UPLOAD_DIR, get_session
 from src.item_types import item_type_label
 from src.item_images import ordered_images
+from src.mindat_api import MindatConfigError, update_mindat_locality
 from src.navigation import switch_to_admin_edit
 from src.ui import (
     render_detail_grid,
@@ -17,6 +21,9 @@ from src.ui import (
 )
 from src.wiki import load_mindat_raw, mineral_elements, mineral_formula
 from src.wiki_view import render_generic_photo, render_mineral_wiki
+
+
+logger = logging.getLogger(__name__)
 
 
 def move_photo(key: str, count: int, delta: int) -> None:
@@ -64,6 +71,11 @@ def render_item_details(item) -> bool:
                 ("País", item.locality.country),
                 ("ID localidad", item.locality_id),
                 ("Mindat locality ID", item.locality.mindat_locality_id),
+                ("Latitud", item.locality.latitude),
+                ("Longitud", item.locality.longitude),
+                ("Fuente Mindat", item.locality.source_url),
+                ("Actualizada", item.locality.updated_at),
+                ("Descripcion", item.locality.notes),
             ]
         )
         if locality_rows:
@@ -97,6 +109,17 @@ def render_item_details(item) -> bool:
 
     for title, rows in sections:
         render_visible_section(title, rows)
+
+    if item.locality and item.locality.api_raw_json:
+        try:
+            raw_locality = json.loads(item.locality.api_raw_json)
+        except (TypeError, ValueError):
+            raw_locality = item.locality.api_raw_json
+        with st.expander("Datos completos de la localidad en Mindat"):
+            if isinstance(raw_locality, str):
+                st.code(raw_locality, language="json")
+            else:
+                st.json(raw_locality)
     return True
 
 
@@ -221,11 +244,34 @@ try:
             ]
         )
 
-        action_cols = st.columns([1.3, 1.1, 3.6])
+        action_cols = st.columns([1.3, 1.1, 1.7, 1.9])
         if item.purchase_link:
             action_cols[0].link_button("Comprar / ver anuncio", item.purchase_link, use_container_width=True)
         if admin_unlocked() and action_cols[1].button("Editar pieza", use_container_width=True):
             switch_to_admin_edit(item.item_code)
+        if admin_unlocked():
+            can_update_locality = bool(item.locality and item.locality.mindat_locality_id)
+            if action_cols[2].button(
+                "Actualizar localización",
+                disabled=not can_update_locality,
+                help=(
+                    "Consulta Mindat y actualiza todas las piezas vinculadas a esta localidad."
+                    if can_update_locality
+                    else "Asigna primero el ID de localidad Mindat desde Editar pieza."
+                ),
+                use_container_width=True,
+            ):
+                try:
+                    with st.spinner("Consultando la localidad en Mindat..."):
+                        _, message = update_mindat_locality(db, item.locality)
+                    st.success(message)
+                except MindatConfigError as exc:
+                    st.error(str(exc))
+                except LookupError as exc:
+                    st.warning(str(exc))
+                except Exception:
+                    logger.exception("Error updating Mindat locality for item %s", item.item_code)
+                    st.error("No se pudo actualizar la localidad. Revisa los logs del servicio.")
 
         pieza_tab, wiki_tab = st.tabs(["Pieza", "Wiki mineral"])
 

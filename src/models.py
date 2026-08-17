@@ -108,6 +108,9 @@ class Locality(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    api_raw_json: Mapped[str | None] = mapped_column(Text, deferred=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     items: Mapped[list["CollectionItem"]] = relationship(back_populates="locality")
 

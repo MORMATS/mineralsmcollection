@@ -1,4 +1,9 @@
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from src import mindat_api
+from src.db import Base
+from src.models import CollectionItem, Locality, MineralSpecies
 
 
 def test_normalize_mindat_record_extracts_core_fields():
@@ -67,3 +72,42 @@ def test_normalize_mindat_locality_record_extracts_coordinates():
     assert data["country"] == "Spain"
     assert data["latitude"] == 40.5606
     assert data["longitude"] == -4.0171
+    assert data["source_url"] == "https://www.mindat.org/loc-456.html"
+    assert '"id": "456"' in data["api_raw_json"]
+
+
+def test_update_mindat_locality_refreshes_shared_location(monkeypatch):
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    db = Session(engine, future=True)
+    mineral = MineralSpecies(name="Quartz")
+    locality = Locality(mindat_locality_id=456, name="Nombre antiguo")
+    db.add_all(
+        [
+            CollectionItem(item_code="MIN-0001", mineral=mineral, locality=locality, sold=False),
+            CollectionItem(item_code="MIN-0002", mineral=mineral, locality=locality, sold=False),
+        ]
+    )
+    db.commit()
+    monkeypatch.setattr(
+        mindat_api,
+        "fetch_mindat_locality_detail",
+        lambda locality_id: {
+            "id": locality_id,
+            "name": "Mina Nueva",
+            "region": "Madrid",
+            "country": "Spain",
+            "lat": "40.5",
+            "long": "-4.0",
+            "description": "Localidad historica",
+        },
+    )
+
+    updated, message = mindat_api.update_mindat_locality(db, locality)
+
+    assert updated.name == "Mina Nueva"
+    assert updated.country == "España"
+    assert updated.latitude == 40.5
+    assert updated.notes == "Localidad historica"
+    assert updated.updated_at is not None
+    assert message == "Localizacion actualizada en 2 pieza(s)."

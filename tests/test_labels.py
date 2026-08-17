@@ -34,14 +34,14 @@ def test_label_identifier_uses_four_digit_numeric_suffix():
     assert label_identifier("SIN-CODIGO", 7) == "0007"
 
 
-def test_locality_text_prefers_region_over_locality_name():
+def test_locality_text_uses_mine_region_and_country():
     locality = SimpleNamespace(
         mine="Mina Esperanza",
         name="Almadén",
         region="Castilla-La Mancha",
         country="España",
     )
-    assert locality_text(locality) == "Castilla-La Mancha › España"
+    assert locality_text(locality) == "Mina Esperanza › Castilla-La Mancha › España"
 
     locality_fallback = SimpleNamespace(
         mine="Mina Esperanza",
@@ -49,7 +49,7 @@ def test_locality_text_prefers_region_over_locality_name():
         region=None,
         country="España",
     )
-    assert locality_text(locality_fallback) == "Almadén › España"
+    assert locality_text(locality_fallback) == "Mina Esperanza › España"
 
     country_only = SimpleNamespace(name=None, region=None, country="España")
     assert locality_text(country_only) == "España"

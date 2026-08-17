@@ -59,10 +59,14 @@ def locality_text(locality: object | None) -> str:
 
     parts: list[str] = []
     seen: set[str] = set()
-    region = str(getattr(locality, "region", "") or "").strip()
+    mine = str(getattr(locality, "mine", "") or "").strip()
     locality_name = str(getattr(locality, "name", "") or "").strip()
-    place = region or locality_name
-    for value in (place, getattr(locality, "country", "")):
+    place = mine or locality_name
+    for value in (
+        place,
+        getattr(locality, "region", ""),
+        getattr(locality, "country", ""),
+    ):
         value = str(value or "").strip()
         key = " ".join(value.casefold().split())
         if value and key not in seen:

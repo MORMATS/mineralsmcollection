@@ -76,6 +76,42 @@ def test_normalize_mindat_locality_record_extracts_coordinates():
     assert '"id": "456"' in data["api_raw_json"]
 
 
+def test_normalize_mindat_locality_record_parses_txt_hierarchy_with_mine():
+    data = mindat_api.normalize_mindat_locality_record(
+        {
+            "id": 4155,
+            "txt": (
+                "Silver Mines (Silver Reef), St Arnaud, Northern Grampians Shire, "
+                "Victoria, Australia"
+            ),
+            "country": "Australia",
+        }
+    )
+
+    assert data["mine"] == "Silver Mines (Silver Reef)"
+    assert data["name"] == "St Arnaud"
+    assert data["region"] == "Northern Grampians Shire, Victoria"
+    assert data["country"] == "Australia"
+
+
+def test_normalize_mindat_locality_record_parses_txt_hierarchy_without_mine():
+    data = mindat_api.normalize_mindat_locality_record(
+        {
+            "id": 693,
+            "txt": (
+                "Boxian meteorite, Xiaoyanzhuang, Qiaocheng District, "
+                "Bozhou, Anhui, China"
+            ),
+            "country": "China",
+        }
+    )
+
+    assert data["mine"] is None
+    assert data["name"] == "Boxian meteorite"
+    assert data["region"] == "Xiaoyanzhuang, Qiaocheng District, Bozhou, Anhui"
+    assert data["country"] == "China"
+
+
 def test_update_mindat_locality_refreshes_shared_location(monkeypatch):
     engine = create_engine("sqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)

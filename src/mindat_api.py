@@ -16,6 +16,12 @@ from src.settings import get_setting
 
 MINDAT_BASE = "https://api.mindat.org/v1"
 
+_MINDAT_SITE_PATTERN = re.compile(
+    r"\b(?:mine|mines|mining|quarry|pit|deposit|occurrence|prospect|shaft|adit|"
+    r"claim|pegmatite|mina|minas|cantera|yacimiento|pozo|corta|fil[oó]n)\b",
+    re.IGNORECASE,
+)
+
 
 class MindatConfigError(RuntimeError):
     pass
@@ -335,8 +341,43 @@ def fetch_mindat_locality_detail(mindat_locality_id: int) -> dict | None:
     return None
 
 
+def _mindat_locality_hierarchy(record: dict) -> dict[str, str | None]:
+    """Infer locality fields from Mindat's comma-separated ``txt`` hierarchy."""
+    hierarchy_text = _first_text(
+        record,
+        "txt",
+        "full_name",
+        "full_location",
+        "locality_path",
+        "hierarchy",
+    )
+    parts = [part.strip() for part in str(hierarchy_text or "").split(",") if part.strip()]
+    if not parts:
+        return {"name": None, "mine": None, "region": None, "country": None}
+
+    country = parts.pop() if parts else None
+    if not parts:
+        return {"name": None, "mine": None, "region": None, "country": country}
+
+    most_specific = parts.pop(0)
+    if _MINDAT_SITE_PATTERN.search(most_specific):
+        mine = most_specific
+        name = parts.pop(0) if parts else None
+    else:
+        mine = None
+        name = most_specific
+
+    return {
+        "name": name,
+        "mine": mine,
+        "region": ", ".join(parts) or None,
+        "country": country,
+    }
+
+
 def normalize_mindat_locality_record(record: dict) -> dict:
     mindat_locality_id = _to_int(_first(record, "id", "mindat_id", "locality_id"))
+    hierarchy = _mindat_locality_hierarchy(record)
     latitude = _first_float(record, "latitude", "lat", "decimal_latitude")
     longitude = _first_float(record, "longitude", "long", "lng", "lon", "decimal_longitude")
     source_url = _first_text(record, "url", "mindat_url", "source_url")
@@ -345,13 +386,18 @@ def normalize_mindat_locality_record(record: dict) -> dict:
 
     return {
         "mindat_locality_id": mindat_locality_id,
-        "name": _first_text(record, "name", "title", "locality_name", "locname"),
-        "mine": _first_text(record, "mine", "minename", "deposit", "site"),
-        "region": _first_text(record, "region", "province", "state", "district"),
-        "country": _first_text(record, "country", "country_name"),
+        "name": _first_text(record, "name", "title", "locality_name", "locname")
+        or hierarchy["name"],
+        "mine": _first_text(record, "mine", "minename", "deposit", "site")
+        or hierarchy["mine"],
+        "region": _first_text(record, "region", "province", "state", "district")
+        or hierarchy["region"],
+        "country": _first_text(record, "country", "country_name") or hierarchy["country"],
         "latitude": latitude,
         "longitude": longitude,
-        "notes": _first_text(record, "description", "notes", "summary", "txt"),
+        "notes": _first_text(
+            record, "description_short", "description", "notes", "summary"
+        ),
         "source_url": source_url,
         "api_raw_json": json.dumps(record, ensure_ascii=False),
     }

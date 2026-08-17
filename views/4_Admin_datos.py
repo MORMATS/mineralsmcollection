@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 from src.auth import require_admin_access
 from src.db import get_session
 from src.localities import locality_coordinate_guess, locality_label, normalize_existing_localities
+from src.mindat_api import MindatConfigError, update_mindat_locality
 from src.models import CollectionItem, Locality, MineralSpecies, Chakra, ZodiacSign
 from src.seeds import seed_all
 from src.ui import render_metric_cards, render_page_header, render_section_heading
@@ -55,6 +56,41 @@ try:
             f"{result['reassigned_items']} piezas reasignadas."
         )
         st.rerun()
+
+    mindat_localities = [
+        locality for locality, _ in locality_rows if locality.mindat_locality_id
+    ]
+    if st.button(
+        "Actualizar todas las localizaciones desde Mindat",
+        disabled=not mindat_localities,
+        help="Completa país, región, localidad, mina/yacimiento y coordenadas cuando Mindat los proporciona.",
+        use_container_width=True,
+    ):
+        progress = st.progress(0, text="Preparando actualización de Mindat...")
+        updated_count = 0
+        failed_ids = []
+        for index, locality in enumerate(mindat_localities, start=1):
+            progress.progress(
+                index / len(mindat_localities),
+                text=f"Actualizando Mindat {locality.mindat_locality_id}...",
+            )
+            try:
+                update_mindat_locality(db, locality)
+                updated_count += 1
+            except MindatConfigError as exc:
+                db.rollback()
+                st.error(str(exc))
+                break
+            except Exception:
+                db.rollback()
+                failed_ids.append(str(locality.mindat_locality_id))
+        progress.empty()
+        if updated_count:
+            st.success(f"{updated_count} localizaciones actualizadas desde Mindat.")
+        if failed_ids:
+            st.warning(
+                "No se pudieron actualizar estos ID Mindat: " + ", ".join(failed_ids)
+            )
 
     if locality_rows:
         table_rows = []

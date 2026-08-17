@@ -144,7 +144,9 @@ def enrich_locality_from_mindat(
     if not mindat_locality_id:
         return locality_name, mine, region, country, latitude, longitude
 
-    needs_text = not any(clean_text(value) for value in (locality_name, mine, region, country))
+    needs_text = any(
+        not clean_text(value) for value in (locality_name, mine, region, country)
+    )
     needs_coordinates = latitude is None or longitude is None
     if not needs_text and not needs_coordinates:
         return locality_name, mine, region, country, latitude, longitude

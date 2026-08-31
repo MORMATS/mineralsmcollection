@@ -90,7 +90,7 @@ def render_admin_sidebar() -> None:
             if admin_password_configured():
                 _render_unlock_form("sidebar")
             else:
-                st.caption("ADMIN_PASSWORD_HASH no esta configurado.")
+                st.caption("ADMIN_PASSWORD_HASH no está configurado.")
 
 
 def require_admin_access() -> None:
@@ -98,22 +98,22 @@ def require_admin_access() -> None:
         return
 
     render_page_header(
-        "Administracion",
+        "Administración",
         "Acceso protegido",
-        "Introduce la contrasena de administracion para continuar.",
-        meta=["Zona privada", "Control de edicion"],
+        "Introduce la contraseña de administración para continuar.",
+        meta=["Zona privada", "Control de edición"],
     )
     if admin_password_configured():
         _render_unlock_form("main")
     else:
-        st.error("ADMIN_PASSWORD_HASH no esta configurado en el entorno.")
+        st.error("ADMIN_PASSWORD_HASH no está configurado en el entorno.")
 
     st.stop()
 
 
 def _render_unlock_form(key_prefix: str) -> None:
     with st.form(f"{key_prefix}_admin_unlock"):
-        password = st.text_input("Contrasena", type="password", key=f"{key_prefix}_admin_password")
+        password = st.text_input("Contraseña", type="password", key=f"{key_prefix}_admin_password")
         submitted = st.form_submit_button("Desbloquear")
 
     if not submitted:
@@ -123,4 +123,4 @@ def _render_unlock_form(key_prefix: str) -> None:
         st.session_state["admin_unlocked"] = True
         st.rerun()
 
-    st.error("Contrasena incorrecta.")
+    st.error("Contraseña incorrecta.")

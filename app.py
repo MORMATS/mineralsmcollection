@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from src.auth import admin_unlocked, render_admin_sidebar
+from src.crud import get_item_by_code
 from src.db import get_session, UPLOAD_DIR
 from src.errors import is_schema_migration_error
 from src.item_types import ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
@@ -85,18 +86,52 @@ def home_page() -> None:
             ]
         )
 
+        explore_col, map_col, wiki_col = st.columns(3)
+        if explore_col.button(
+            "Explorar colección",
+            icon=":material/grid_view:",
+            type="primary",
+            use_container_width=True,
+        ):
+            switch_to_collection()
+        if map_col.button(
+            "Ver mapa de orígenes",
+            icon=":material/travel_explore:",
+            use_container_width=True,
+        ):
+            st.switch_page(map_page())
+        if wiki_col.button(
+            "Consultar wiki mineral",
+            icon=":material/menu_book:",
+            use_container_width=True,
+        ):
+            st.switch_page(wiki_page())
+
         render_section_heading(
             "Búsqueda rápida",
             "Abre una ficha por ID si ya sabes qué pieza quieres consultar.",
         )
-        search_col, action_col = st.columns([3, 1])
-        item_code = search_col.text_input(
-            "ID / código de pieza",
-            placeholder="Ej: 12 o MIN-0012",
-            label_visibility="collapsed",
-        )
-        if action_col.button("Abrir ficha", type="primary", use_container_width=True) and item_code:
-            switch_to_item(item_code.strip())
+        with st.form("home_item_lookup"):
+            search_col, action_col = st.columns([3, 1])
+            item_code = search_col.text_input(
+                "ID o código de pieza",
+                placeholder="Ej.: 12 o MIN-0012",
+                help="Puedes escribir solo el número o el código completo.",
+            )
+            lookup_submitted = action_col.form_submit_button(
+                "Abrir ficha",
+                icon=":material/search:",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if lookup_submitted:
+            if not item_code.strip():
+                st.warning("Escribe un ID o código de pieza para continuar.")
+            elif get_item_by_code(db, item_code) is None:
+                st.error(f"No existe ninguna pieza con el código «{item_code.strip()}».")
+            else:
+                switch_to_item(item_code.strip())
 
         latest_items = (
             db.execute(
@@ -120,7 +155,7 @@ def home_page() -> None:
                 "Una entrada directa a los ejemplares añadidos recientemente.",
                 aside=f"{len(latest_items)} destacadas",
             )
-            cols = st.columns(4)
+            cols = st.columns(min(len(latest_items), 4))
             for col, item in zip(cols, latest_items):
                 with col:
                     render_collection_card(
@@ -191,8 +226,8 @@ except Exception as exc:
     logger.exception("Unhandled application error")
     if is_production():
         if is_schema_migration_error(exc):
-            st.error("La base de datos necesita una actualizacion. Ejecuta las migraciones y reinicia el servicio.")
+            st.error("La base de datos necesita una actualización. Ejecuta las migraciones y reinicia el servicio.")
         else:
-            st.error("No se pudo cargar esta vista. Revisa el servicio o intentalo de nuevo mas tarde.")
+            st.error("No se pudo cargar esta vista. Revisa el servicio o inténtalo de nuevo más tarde.")
     else:
         raise

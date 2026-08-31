@@ -13,9 +13,9 @@ from src.ui import render_metric_cards, render_page_header, render_section_headi
 require_admin_access()
 
 render_page_header(
-    "Administracion",
+    "Administración",
     "Datos de referencia",
-    "Gestiona minerales, asociaciones y datos base usados por la coleccion.",
+    "Gestiona minerales, asociaciones y datos base usados por la colección.",
     meta=["Minerales", "Chakras", "Zodiaco"],
 )
 
@@ -118,7 +118,7 @@ try:
             )
         st.dataframe(table_rows, hide_index=True, use_container_width=True)
     else:
-        st.info("Todavia no hay localizaciones guardadas.")
+        st.info("Todavía no hay localizaciones guardadas.")
 
     item_location_rows = (
         db.execute(
@@ -159,9 +159,9 @@ try:
     )
     with st.form("mineral"):
         name = st.text_input("Nombre mineral")
-        formula = st.text_input("Formula")
+        formula = st.text_input("Fórmula")
         elements = st.text_input("Elementos")
-        category = st.text_input("Categoria")
+        category = st.text_input("Categoría")
         crystal_system = st.text_input("Sistema cristalino")
         hardness_min = st.number_input("Dureza min", min_value=0.0, max_value=10.0, step=0.5)
         hardness_max = st.number_input("Dureza max", min_value=0.0, max_value=10.0, step=0.5)

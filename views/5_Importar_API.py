@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 require_admin_access()
 
 render_page_header(
-    "Administracion",
+    "Administración",
     "Importar Mindat",
     "Busca minerales por nombre y actualiza los datos utiles de la wiki si Mindat los expone.",
     meta=["Mindat API", "Wiki mineral", "Enriquecimiento"],
@@ -99,9 +99,9 @@ finally:
 
 st.divider()
 render_section_heading(
-    "Actualizar wiki de mi coleccion",
+    "Actualizar wiki de mi colección",
     "Recarga desde Mindat las especies que ya tienen piezas asociadas.",
 )
-st.write(f"{len(collection_names)} mineral(es) con piezas en la coleccion.")
-if st.button("Actualizar minerales de mi coleccion desde Mindat", disabled=not collection_names):
+st.write(f"{len(collection_names)} mineral(es) con piezas en la colección.")
+if st.button("Actualizar minerales de mi colección desde Mindat", disabled=not collection_names):
     import_names(list(collection_names))

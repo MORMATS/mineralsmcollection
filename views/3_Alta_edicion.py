@@ -274,7 +274,7 @@ def item_template_label(option: str, item_by_code: dict[str, CollectionItem]) ->
 
 def render_delete_item_panel(db, item: CollectionItem) -> None:
     with st.expander("Borrar pieza / anuncio"):
-        st.warning("Esta accion borra la pieza de la base de datos y elimina sus fotos guardadas.")
+        st.warning("Esta acción borra la pieza de la base de datos y elimina sus fotos guardadas.")
         confirm = st.checkbox(
             f"Confirmo que quiero borrar {item.item_code}",
             key=f"delete_confirm_{item.id}",
@@ -355,8 +355,8 @@ if st.session_state.pop(RESET_NEW_ITEM_FORM_KEY, False):
     clear_new_item_form_state()
 
 render_page_header(
-    "Administracion",
-    "Alta / edicion",
+    "Administración",
+    "Alta / edición",
     "Crea piezas nuevas o carga una pieza existente para modificar sus datos.",
     meta=["Piezas", "Fotos", "Inventario"],
 )
@@ -430,7 +430,7 @@ try:
     template_option = EMPTY_ITEM_TEMPLATE_OPTION
     if editing:
         if not items:
-            st.info("Todavia no hay piezas para editar.")
+            st.info("Todavía no hay piezas para editar.")
             st.stop()
 
         item_codes = [existing_item.item_code for existing_item in items]
@@ -809,7 +809,7 @@ try:
                 except IntegrityError:
                     db.rollback()
                     if attempt == 2:
-                        st.error("No se pudo reservar un ID automatico. Vuelve a guardar la pieza.")
+                        st.error("No se pudo reservar un ID automático. Vuelve a guardar la pieza.")
                         st.stop()
                 except ImageUploadError as exc:
                     db.rollback()

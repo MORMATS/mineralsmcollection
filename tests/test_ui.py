@@ -46,6 +46,9 @@ def test_global_styles_include_market4watch_theme_tokens(monkeypatch):
     assert "--m4w-border: #c4a882;" in markup
     assert "--mineral-forest: var(--m4w-accent);" in markup
     assert "border-left: 4px solid var(--m4w-accent)" in markup
+    assert "--app-pine: #173c35;" in markup
+    assert "--app-copper: #c8783e;" in markup
+    assert "@media (prefers-reduced-motion: reduce)" in markup
 
 
 def test_image_height_ratio_reads_image_dimensions(tmp_path):

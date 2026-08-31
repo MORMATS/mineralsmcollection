@@ -215,9 +215,12 @@ with st.container(border=True):
             use_container_width=True,
         )
 
-if lookup_submitted and typed_code:
-    st.session_state["selected_item_code"] = normalize_item_code(typed_code)
-    st.rerun()
+if lookup_submitted:
+    if typed_code.strip():
+        st.session_state["selected_item_code"] = normalize_item_code(typed_code)
+        st.rerun()
+    else:
+        st.warning("Escribe un ID de pieza para realizar la búsqueda.")
 
 item_code = normalize_item_code(query_code or st.session_state.get("selected_item_code", typed_code))
 

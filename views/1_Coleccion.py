@@ -34,6 +34,16 @@ GALLERY_PAGE_SIZE_OPTIONS = [12, 24, 48, "Todos"]
 DEFAULT_GALLERY_PAGE_SIZE = 24
 LABEL_SELECTION_KEY = "collection_label_selection"
 LABEL_PANEL_KEY = "collection_labels_open"
+FILTER_WIDGET_KEYS = (
+    "collection_search",
+    "collection_type",
+    "collection_status",
+    "collection_mineral",
+    "collection_country",
+    "collection_chakra",
+    "collection_sort",
+    "collection_page_number",
+)
 
 
 def cover_image_path(item) -> Path | None:
@@ -46,6 +56,23 @@ def cover_image_path(item) -> Path | None:
 
 def item_label(item) -> str:
     return item.display_name or item.mineral.name
+
+
+def reset_collection_view() -> None:
+    for key in FILTER_WIDGET_KEYS:
+        st.session_state.pop(key, None)
+    clear_collection_filters()
+    st.query_params.clear()
+
+
+def sort_collection_items(items: list, sort_mode: str) -> list:
+    if sort_mode == "Nombre A–Z":
+        return sorted(items, key=lambda item: (item_label(item).casefold(), item.item_code))
+    if sort_mode == "ID ascendente":
+        return sorted(items, key=lambda item: item.item_code)
+    if sort_mode == "Disponibles primero":
+        return sorted(items, key=lambda item: (bool(item.sold), item_label(item).casefold()))
+    return items
 
 
 def parse_locality_ids(value: object) -> list[int]:
@@ -93,7 +120,7 @@ def paginated_items(items: list) -> tuple[list, int, int, int | str]:
 
     control_col, page_col = st.columns([1, 1])
     page_size = control_col.selectbox(
-        "Piezas por pagina",
+        "Piezas por página",
         GALLERY_PAGE_SIZE_OPTIONS,
         index=GALLERY_PAGE_SIZE_OPTIONS.index(DEFAULT_GALLERY_PAGE_SIZE),
         key="collection_page_size",
@@ -105,10 +132,9 @@ def paginated_items(items: list) -> tuple[list, int, int, int | str]:
     current_default = min(int(st.session_state.get("collection_page_number", 1)), total_pages)
     st.session_state["collection_page_number"] = current_default
     page = page_col.number_input(
-        "Pagina",
+        "Página",
         min_value=1,
         max_value=total_pages,
-        value=current_default,
         step=1,
         key="collection_page_number",
     )
@@ -214,16 +240,25 @@ try:
     )
     with st.container(border=True):
         search_col, type_col, sold_col = st.columns([2, 1, 1])
-        text = search_col.text_input("Buscar texto o ID", placeholder="Ej: 1, MIN-0001 o cuarzo")
+        text = search_col.text_input(
+            "Buscar texto o ID",
+            placeholder="Ej.: 1, MIN-0001 o cuarzo",
+            key="collection_search",
+        )
         type_filter = type_col.selectbox(
             "Tipo",
             opts["item_types"],
             index=opts["item_types"].index(default_item_type_filter),
+            key="collection_type",
         )
-        sold_filter = sold_col.selectbox("Estado", ["Todos", "Disponible", "Vendido"])
+        sold_filter = sold_col.selectbox(
+            "Estado",
+            ["Todos", "Disponible", "Vendido"],
+            key="collection_status",
+        )
 
-        mineral_col, country_col, chakra_col = st.columns(3)
-        mineral = mineral_col.selectbox("Mineral", opts["minerals"])
+        mineral_col, country_col, chakra_col, sort_col = st.columns(4)
+        mineral = mineral_col.selectbox("Mineral", opts["minerals"], key="collection_mineral")
         default_country_index = (
             opts["countries"].index(requested_country)
             if requested_country in opts["countries"]
@@ -233,8 +268,38 @@ try:
             "Ubicación / país",
             opts["countries"],
             index=default_country_index,
+            key="collection_country",
         )
-        chakra = chakra_col.selectbox("Chakra", opts["chakras"])
+        chakra = chakra_col.selectbox("Chakra", opts["chakras"], key="collection_chakra")
+        sort_mode = sort_col.selectbox(
+            "Ordenar",
+            ["Más recientes", "Nombre A–Z", "ID ascendente", "Disponibles primero"],
+            key="collection_sort",
+        )
+
+        active_filter_count = sum(
+            (
+                bool(text.strip()),
+                type_filter != ITEM_TYPE_FILTER_ALL,
+                sold_filter != "Todos",
+                mineral != "Todos",
+                country != "Todos",
+                chakra != "Todos",
+                bool(map_locality_ids),
+            )
+        )
+        reset_col, filter_summary_col = st.columns([1, 3])
+        reset_col.button(
+            "Limpiar filtros",
+            icon=":material/filter_alt_off:",
+            key="collection_reset_filters",
+            disabled=active_filter_count == 0 and sort_mode == "Más recientes",
+            on_click=reset_collection_view,
+            use_container_width=True,
+        )
+        filter_summary_col.caption(
+            "Vista sin filtros" if active_filter_count == 0 else f"{active_filter_count} filtro(s) activo(s)"
+        )
 
     sold = None
     if sold_filter == "Disponible":
@@ -261,6 +326,7 @@ try:
         chakra=chakra,
         locality_ids=map_locality_ids,
     )
+    items = sort_collection_items(items, sort_mode)
 
     available_count = sum(1 for item in items if not item.sold)
     sold_count = len(items) - available_count
@@ -278,10 +344,9 @@ try:
     if items:
         labels_col, _ = st.columns([1, 4])
         if labels_col.button(
-            "Labels",
+            "Imprimir etiquetas",
             icon=":material/label:",
             use_container_width=True,
-            type="primary",
             help="Seleccionar minerales y preparar etiquetas para imprimir.",
         ):
             st.session_state[LABEL_PANEL_KEY] = True
@@ -290,7 +355,7 @@ try:
 
         visible_items, current_page, total_pages, page_size = paginated_items(items)
         if total_pages > 1:
-            st.caption(f"Mostrando {len(visible_items)} de {len(items)} piezas - pagina {current_page}/{total_pages}.")
+            st.caption(f"Mostrando {len(visible_items)} de {len(items)} piezas · página {current_page}/{total_pages}.")
 
         render_section_heading(
             "Piezas",
@@ -299,13 +364,19 @@ try:
         )
         render_gallery(visible_items)
     else:
-        st.info("No hay piezas que coincidan con los filtros.")
+        st.info("No hay piezas que coincidan con los filtros actuales.")
+        st.button(
+            "Restablecer búsqueda",
+            icon=":material/refresh:",
+            on_click=reset_collection_view,
+            use_container_width=False,
+        )
 
     if admin_unlocked() and items:
         st.divider()
         render_section_heading(
-            "Edicion rapida",
-            "Abre una pieza filtrada directamente en el formulario de administracion.",
+            "Edición rápida",
+            "Abre una pieza filtrada directamente en el formulario de administración.",
         )
         edit_code = st.selectbox(
             "Pieza",

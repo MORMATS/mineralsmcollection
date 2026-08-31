@@ -817,12 +817,12 @@ try:
         [
             ("Lugares", len(groups), "Exactos o aproximados"),
             ("En mapa", mapped_count, "Piezas ubicadas"),
-            ("Pendientes", missing_coordinates, "Sin ubicacion mapeable"),
+            ("Pendientes", missing_coordinates, "Sin ubicación mapeable"),
         ]
     )
 
     if not groups:
-        st.info("No hay piezas con origen mapeable para los filtros actuales. Anade pais, region conocida o latitud/longitud desde Alta / edicion.")
+        st.info("No hay piezas con origen mapeable para los filtros actuales. Añade país, región conocida o latitud/longitud desde Alta / edición.")
         st.stop()
 
     render_map(single_rows, bubble_rows, selected_item_type)

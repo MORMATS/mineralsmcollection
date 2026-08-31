@@ -127,7 +127,7 @@ def test_collection_labels_flow_shows_preview_after_selection(monkeypatch):
     try:
         app = AppTest.from_file(COLLECTION_PAGE_PATH, default_timeout=20).run()
         assert not app.exception
-        next(button for button in app.button if button.label == "Labels").click().run()
+        next(button for button in app.button if button.label == "Imprimir etiquetas").click().run()
         assert not app.exception
 
         selector = next(

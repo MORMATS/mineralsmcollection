@@ -133,7 +133,7 @@ def test_collection_labels_flow_shows_preview_after_selection(monkeypatch):
         selector = next(
             widget
             for widget in app.multiselect
-            if widget.label == "Minerales para imprimir"
+            if widget.label == "Piezas para imprimir"
         )
         selector.set_value(["MIN-0024"]).run()
 

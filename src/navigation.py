@@ -62,6 +62,15 @@ def admin_data_page():
     )
 
 
+def admin_localities_page():
+    return st.Page(
+        "views/8_Localizaciones.py",
+        title="Localizaciones",
+        icon=":material/location_on:",
+        url_path="localizaciones",
+    )
+
+
 def admin_import_page():
     return st.Page(
         "views/5_Importar_API.py",
@@ -143,3 +152,9 @@ def switch_to_admin_edit(item_code: str | None = None) -> None:
     if item_code:
         st.session_state["editing_item_code"] = item_code
     st.switch_page(admin_edit_page())
+
+
+def switch_to_admin_localities(locality_id: int | None = None) -> None:
+    if locality_id:
+        st.session_state["editing_locality_id"] = locality_id
+    st.switch_page(admin_localities_page())

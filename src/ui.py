@@ -430,6 +430,12 @@ def render_global_styles() -> None:
             color: var(--m4w-text);
         }
 
+        .type-chip.is-fossil {
+            border-color: rgba(174, 91, 45, .38);
+            background: rgba(174, 91, 45, .13);
+            color: #8a4728;
+        }
+
         .metric-strip {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

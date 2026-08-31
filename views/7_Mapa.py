@@ -14,14 +14,15 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from src.crud import list_collection_map_items, option_lists
 from src.db import DATA_DIR, UPLOAD_DIR, get_session
 from src.item_images import ordered_images
+from src.auth import admin_unlocked
 from src.item_types import (
     ITEM_TYPE_FILTER_ALL,
     item_type_from_filter,
     item_type_label,
     normalize_item_type,
 )
-from src.localities import locality_coordinate_guess, locality_label, locality_normalized_key, normalized_text_key
-from src.navigation import switch_to_collection, switch_to_item
+from src.localities import locality_coordinate_guess, locality_label, locality_normalized_key, normalized_text_key, unmappable_reason
+from src.navigation import switch_to_admin_localities, switch_to_collection, switch_to_item
 from src.ui import escape_html, render_html, render_metric_cards, render_page_header, render_section_heading
 
 
@@ -776,7 +777,7 @@ def open_location(row: dict, selected_item_type: str | None) -> None:
 render_page_header(
     "Mapa",
     "Origen de la colección",
-    "Explora tus minerales y colgantes por procedencia: las burbujas agrupan lugares con varias piezas y las fotos abren fichas individuales.",
+    "Explora minerales, fósiles y colgantes por procedencia: las burbujas agrupan lugares con varias piezas y las fotos abren fichas individuales.",
     meta=["Mapa interactivo", "Burbujas por lugar", "Filtro por tipo"],
 )
 
@@ -810,6 +811,7 @@ try:
         country=country,
     )
     groups, missing_coordinates = group_items_by_location(items)
+    unmappable_items = [item for item in items if not locality_coordinate_guess(item.locality)]
     single_rows, bubble_rows = build_marker_rows(groups)
     mapped_count = sum(len(group.items) for group in groups)
 
@@ -820,6 +822,36 @@ try:
             ("Pendientes", missing_coordinates, "Sin ubicación mapeable"),
         ]
     )
+
+    if unmappable_items:
+        with st.expander(
+            f"Ubicaciones no mapeables ({len(unmappable_items)})",
+            expanded=not groups,
+        ):
+            st.warning(
+                "Estas piezas no pueden situarse en el mapa. Completa el país o, preferiblemente, "
+                "unas coordenadas exactas desde Localizaciones."
+            )
+            st.dataframe(
+                [
+                    {
+                        "Pieza": item.item_code,
+                        "Nombre": item.display_name or item.mineral.name,
+                        "Mineral / material": item.mineral.name,
+                        "Localización": locality_label(item.locality),
+                        "Problema": unmappable_reason(item.locality),
+                    }
+                    for item in unmappable_items
+                ],
+                hide_index=True,
+                use_container_width=True,
+            )
+            if admin_unlocked() and st.button(
+                "Gestionar localizaciones",
+                icon=":material/edit_location_alt:",
+                use_container_width=True,
+            ):
+                switch_to_admin_localities()
 
     if not groups:
         st.info("No hay piezas con origen mapeable para los filtros actuales. Añade país, región conocida o latitud/longitud desde Alta / edición.")

@@ -6,6 +6,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.auth import admin_unlocked
+from src.collection_export import build_collection_workbook
 from src.crud import list_collection_items, option_lists
 from src.db import UPLOAD_DIR, get_session
 from src.item_types import (
@@ -31,9 +32,11 @@ from src.ui import (
 
 
 GALLERY_PAGE_SIZE_OPTIONS = [12, 24, 48, "Todos"]
-DEFAULT_GALLERY_PAGE_SIZE = 24
+DEFAULT_GALLERY_PAGE_SIZE = "Todos"
 LABEL_SELECTION_KEY = "collection_label_selection"
 LABEL_PANEL_KEY = "collection_labels_open"
+EXCEL_SELECTION_KEY = "collection_excel_selection"
+EXCEL_PANEL_KEY = "collection_excel_open"
 FILTER_WIDGET_KEYS = (
     "collection_search",
     "collection_type",
@@ -43,6 +46,7 @@ FILTER_WIDGET_KEYS = (
     "collection_chakra",
     "collection_sort",
     "collection_page_number",
+    "collection_page_size",
 )
 
 
@@ -115,7 +119,7 @@ def render_gallery(items) -> None:
 
 
 def paginated_items(items: list) -> tuple[list, int, int, int | str]:
-    if len(items) <= DEFAULT_GALLERY_PAGE_SIZE:
+    if len(items) <= min(option for option in GALLERY_PAGE_SIZE_OPTIONS if isinstance(option, int)):
         return items, 1, 1, len(items)
 
     control_col, page_col = st.columns([1, 1])
@@ -181,7 +185,7 @@ def render_labels_panel(items: list) -> None:
             st.rerun()
 
         selected_codes = st.multiselect(
-            "Minerales para imprimir",
+            "Piezas para imprimir",
             valid_codes,
             key=LABEL_SELECTION_KEY,
             format_func=lambda code: f"{code} · {item_label(item_by_code[code])}",
@@ -210,6 +214,74 @@ def render_labels_panel(items: list) -> None:
             data=pdf_data,
             file_name="etiquetas-minerales.pdf",
             mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+        )
+
+
+def render_excel_panel(items: list) -> None:
+    item_by_code = {item.item_code: item for item in items}
+    valid_codes = list(item_by_code)
+    current_selection = [
+        code
+        for code in st.session_state.get(EXCEL_SELECTION_KEY, [])
+        if code in item_by_code
+    ]
+    st.session_state[EXCEL_SELECTION_KEY] = current_selection
+
+    with st.container(border=True):
+        title_col, close_col = st.columns([5, 1])
+        with title_col:
+            render_section_heading(
+                "Exportar a Excel",
+                "Selecciona las piezas que quieres incluir. La lista respeta los filtros actuales.",
+                aside="Excel · .xlsx",
+            )
+        if close_col.button("Cerrar", key="close_collection_excel", use_container_width=True):
+            st.session_state[EXCEL_PANEL_KEY] = False
+            st.rerun()
+
+        action_col, clear_col = st.columns(2)
+        if action_col.button(
+            "Seleccionar todas",
+            key="select_all_collection_excel",
+            use_container_width=True,
+        ):
+            st.session_state[EXCEL_SELECTION_KEY] = valid_codes
+            st.rerun()
+        if clear_col.button(
+            "Limpiar selección",
+            key="clear_collection_excel",
+            use_container_width=True,
+        ):
+            st.session_state[EXCEL_SELECTION_KEY] = []
+            st.rerun()
+
+        selected_codes = st.multiselect(
+            "Piezas para exportar",
+            valid_codes,
+            key=EXCEL_SELECTION_KEY,
+            format_func=lambda code: f"{code} · {item_label(item_by_code[code])}",
+            placeholder="Selecciona una o varias piezas",
+        )
+
+        if not selected_codes:
+            st.info("Selecciona al menos una pieza para preparar el archivo Excel.")
+            return
+
+        selected_code_set = set(selected_codes)
+        selected_items = [item for item in items if item.item_code in selected_code_set]
+        st.caption(
+            f"El archivo incluirá {len(selected_items)} pieza(s), con datos de inventario, "
+            "material principal y procedencia."
+        )
+        workbook_data = build_collection_workbook(selected_items)
+        st.download_button(
+            "Descargar Excel",
+            data=workbook_data,
+            file_name=f"coleccion-minerales-{len(selected_items)}-piezas.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            icon=":material/download:",
             type="primary",
             use_container_width=True,
         )
@@ -331,18 +403,20 @@ try:
     available_count = sum(1 for item in items if not item.sold)
     sold_count = len(items) - available_count
     mineral_count = sum(1 for item in items if normalize_item_type(item.item_type) == "mineral")
-    pendant_count = len(items) - mineral_count
+    pendant_count = sum(1 for item in items if normalize_item_type(item.item_type) == "pendant")
+    fossil_count = sum(1 for item in items if normalize_item_type(item.item_type) == "fossil")
     render_metric_cards(
         [
             ("Resultados", len(items), "Piezas encontradas"),
             ("Minerales", mineral_count, item_type_label("mineral", plural=True)),
             ("Colgantes", pendant_count, item_type_label("pendant", plural=True)),
+            ("Fósiles", fossil_count, item_type_label("fossil", plural=True)),
             ("Estado", f"{available_count}/{sold_count}", "Disponibles / vendidas"),
         ]
     )
 
     if items:
-        labels_col, _ = st.columns([1, 4])
+        labels_col, excel_col, _ = st.columns([1.5, 1.5, 2])
         if labels_col.button(
             "Imprimir etiquetas",
             icon=":material/label:",
@@ -350,8 +424,17 @@ try:
             help="Seleccionar minerales y preparar etiquetas para imprimir.",
         ):
             st.session_state[LABEL_PANEL_KEY] = True
+        if excel_col.button(
+            "Exportar Excel",
+            icon=":material/table_view:",
+            use_container_width=True,
+            help="Seleccionar piezas y descargar sus datos en un archivo Excel.",
+        ):
+            st.session_state[EXCEL_PANEL_KEY] = True
         if st.session_state.get(LABEL_PANEL_KEY, False):
             render_labels_panel(items)
+        if st.session_state.get(EXCEL_PANEL_KEY, False):
+            render_excel_panel(items)
 
         visible_items, current_page, total_pages, page_size = paginated_items(items)
         if total_pages > 1:
@@ -359,7 +442,7 @@ try:
 
         render_section_heading(
             "Piezas",
-            "Abre cualquier ficha para ver fotografías, origen, notas y wiki del mineral.",
+            "Abre cualquier ficha para ver fotografías, origen, notas y datos de referencia.",
             aside=f"{len(items)} resultado(s)",
         )
         render_gallery(visible_items)

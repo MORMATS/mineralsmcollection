@@ -377,7 +377,7 @@ try:
     mineral_by_name = {m.name: m for m in minerals}
 
     if not mineral_names:
-        st.warning("Primero crea o importa minerales desde Admin datos o Importar API.")
+        st.warning("Primero crea o importa minerales, fósiles o materiales de referencia desde Admin datos o Importar API.")
         st.stop()
 
     localities = (
@@ -532,7 +532,7 @@ try:
                 key=f"item_type_{form_suffix}",
             )
             mineral_name = st.selectbox(
-                "Mineral principal",
+                "Mineral / material principal",
                 mineral_names,
                 index=default_mineral_index,
                 key=f"mineral_{form_suffix}",

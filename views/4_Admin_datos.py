@@ -154,11 +154,11 @@ try:
         )
 
     render_section_heading(
-        "Crear mineral de referencia",
-        "Completa una ficha manual cuando no venga de Mindat.",
+        "Crear mineral, fósil o material de referencia",
+        "Completa una ficha manual para vincularla después a una pieza de la colección.",
     )
     with st.form("mineral"):
-        name = st.text_input("Nombre mineral")
+        name = st.text_input("Nombre del mineral, fósil o material")
         formula = st.text_input("Fórmula")
         elements = st.text_input("Elementos")
         category = st.text_input("Categoría")
@@ -172,7 +172,7 @@ try:
         zodiac = db.execute(select(ZodiacSign).order_by(ZodiacSign.id)).scalars().all()
         chakra_names = st.multiselect("Chakras", [c.name for c in chakras])
         zodiac_names = st.multiselect("Signos zodiaco", [z.name for z in zodiac])
-        save = st.form_submit_button("Guardar mineral")
+        save = st.form_submit_button("Guardar referencia")
 
     if save:
         if not name:
@@ -200,6 +200,6 @@ try:
         mineral.zodiac_signs = [z for z in zodiac if z.name in zodiac_names]
         db.add(mineral)
         db.commit()
-        st.success("Mineral guardado.")
+        st.success("Referencia guardada.")
 finally:
     db.close()

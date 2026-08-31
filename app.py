@@ -9,13 +9,14 @@ from src.auth import admin_unlocked, render_admin_sidebar
 from src.crud import get_item_by_code
 from src.db import get_session, UPLOAD_DIR
 from src.errors import is_schema_migration_error
-from src.item_types import ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
+from src.item_types import ITEM_TYPE_FOSSIL, ITEM_TYPE_MINERAL, ITEM_TYPE_PENDANT
 from src.item_images import ordered_images
 from src.models import CollectionItem, MineralSpecies
 from src.navigation import (
     admin_data_page,
     admin_edit_page,
     admin_import_page,
+    admin_localities_page,
     collection_page,
     item_page,
     map_page,
@@ -76,12 +77,19 @@ def home_page() -> None:
             )
             or 0
         )
+        fossil_items = (
+            db.scalar(
+                select(func.count(CollectionItem.id)).where(CollectionItem.item_type == ITEM_TYPE_FOSSIL)
+            )
+            or 0
+        )
 
         render_metric_cards(
             [
                 ("Piezas", total_items, f"{available_items} disponibles"),
                 ("Minerales", mineral_items, f"{total_minerals} fichas de referencia"),
                 ("Colgantes", pendant_items, "Piezas tipo joya"),
+                ("Fósiles", fossil_items, "Ejemplares paleontológicos"),
                 ("Vendidas", sold_items, "Histórico de la colección"),
             ]
         )
@@ -187,6 +195,7 @@ public_pages = [
 
 admin_pages = [
     admin_edit_page(),
+    admin_localities_page(),
     admin_data_page(),
     admin_import_page(),
 ]

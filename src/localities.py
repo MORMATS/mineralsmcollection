@@ -265,6 +265,24 @@ def locality_coordinate_guess(locality: Locality | None) -> CoordinateGuess | No
     return None
 
 
+def unmappable_reason(locality: Locality | None) -> str | None:
+    """Return a useful diagnosis when a locality cannot be placed on the map."""
+    if locality_coordinate_guess(locality):
+        return None
+    if locality is None:
+        return "Sin localidad asignada"
+
+    has_latitude = locality.latitude is not None
+    has_longitude = locality.longitude is not None
+    if has_latitude != has_longitude:
+        return "Coordenadas incompletas"
+    if has_latitude and has_longitude:
+        return "Coordenadas fuera de rango"
+    if not any(clean_location_text(value) for value in (locality.name, locality.mine, locality.region, locality.country)):
+        return "Localidad sin datos geográficos"
+    return "Sin coordenadas ni aproximación conocida"
+
+
 def _apply_values(locality: Locality, values: dict[str, object]) -> bool:
     changed = False
     mindat_id = values.get("mindat_locality_id")

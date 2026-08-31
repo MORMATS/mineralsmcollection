@@ -66,6 +66,7 @@ def list_collection_items(
         select(CollectionItem)
         .options(
             selectinload(CollectionItem.mineral).selectinload(MineralSpecies.chakras),
+            selectinload(CollectionItem.mineral).selectinload(MineralSpecies.zodiac_signs),
             joinedload(CollectionItem.locality),
             selectinload(CollectionItem.images),
         )

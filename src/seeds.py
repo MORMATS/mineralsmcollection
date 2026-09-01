@@ -23,6 +23,11 @@ ZODIAC = [
 
 MINERALS = [
     {
+        "name": "Fósil",
+        "category": "Fósil",
+        "description": "Referencia genérica para piezas fósiles sin una especie paleontológica específica.",
+    },
+    {
         "name": "Quartz",
         "formula": "SiO2",
         "category": "Silicate",

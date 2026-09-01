@@ -7,9 +7,14 @@ from sqlalchemy.orm import sessionmaker
 from streamlit.testing.v1 import AppTest
 
 from src import db as db_module
+from src import mindat_api
 from src.db import Base
 from src.localities import unmappable_reason
-from src.locality_editor import LocalityValidationError, parse_locality_form
+from src.locality_editor import (
+    LocalityValidationError,
+    merge_mindat_locality_values,
+    parse_locality_form,
+)
 from src.models import CollectionItem, Locality, MineralSpecies
 
 
@@ -47,6 +52,45 @@ def test_parse_locality_form_reports_coordinate_errors(latitude, longitude, mess
 def test_parse_locality_form_requires_geographic_information():
     with pytest.raises(LocalityValidationError, match="Añade al menos"):
         parse_locality_form(notes="Sin origen conocido")
+
+
+def test_merge_mindat_locality_values_prefers_api_and_keeps_missing_fallbacks():
+    values = parse_locality_form(
+        mindat_locality_id="456",
+        name="Nombre manual",
+        mine="Mina manual",
+        country="España",
+        latitude="40",
+        longitude="-3",
+        notes="Nota manual",
+    )
+
+    merged = merge_mindat_locality_values(
+        values,
+        {
+            "name": "Nombre Mindat",
+            "mine": None,
+            "region": "Madrid",
+            "country": "Spain",
+            "latitude": 41.5,
+            "longitude": -4.2,
+            "notes": "Nota Mindat",
+            "source_url": "https://www.mindat.org/loc-456.html",
+            "api_raw_json": '{"id": 456}',
+        },
+    )
+
+    assert merged["mindat_locality_id"] == 456
+    assert merged["name"] == "Nombre Mindat"
+    assert merged["mine"] == "Mina manual"
+    assert merged["region"] == "Madrid"
+    assert merged["country"] == "España"
+    assert merged["latitude"] == pytest.approx(41.5)
+    assert merged["longitude"] == pytest.approx(-4.2)
+    assert merged["notes"] == "Nota Mindat"
+    assert merged["source_url"] == "https://www.mindat.org/loc-456.html"
+    assert merged["api_raw_json"] == '{"id": 456}'
+    assert merged["normalized_key"] == "mindat:456"
 
 
 def test_unmappable_reason_distinguishes_missing_invalid_and_unknown_locations():
@@ -122,5 +166,64 @@ def test_admin_locality_page_shows_relations_and_saves_coordinates(monkeypatch, 
             saved = db.scalar(select(Locality).where(Locality.id == locality_id))
             assert saved.latitude == pytest.approx(43.4)
             assert saved.longitude == pytest.approx(-8.4)
+    finally:
+        engine.dispose()
+
+
+def test_admin_locality_page_refreshes_details_when_mindat_id_changes(monkeypatch, tmp_path):
+    engine = create_engine(
+        f"sqlite:///{(tmp_path / 'mindat-refresh.sqlite').as_posix()}",
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+    test_session = sessionmaker(bind=engine, future=True)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(db_module, "SessionLocal", test_session)
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "test-password")
+    monkeypatch.setattr(
+        mindat_api,
+        "get_mindat_locality_data",
+        lambda locality_id: {
+            "mindat_locality_id": locality_id,
+            "name": "Localidad Mindat",
+            "mine": "Mina Mindat",
+            "region": "Madrid",
+            "country": "Spain",
+            "latitude": 40.5,
+            "longitude": -4.0,
+            "notes": "Datos remotos",
+            "source_url": f"https://www.mindat.org/loc-{locality_id}.html",
+            "api_raw_json": f'{{"id": {locality_id}}}',
+        },
+    )
+
+    with test_session() as db:
+        locality = Locality(name="Nombre antiguo", country="España")
+        db.add(locality)
+        db.commit()
+        locality_id = locality.id
+
+    try:
+        app = AppTest.from_file(PAGE_PATH, default_timeout=20)
+        app.session_state["admin_unlocked"] = True
+        app.run()
+
+        mindat_id = next(
+            widget for widget in app.text_input if widget.label == "ID de localidad en Mindat"
+        )
+        mindat_id.set_value("456")
+        next(button for button in app.button if button.label == "Guardar cambios").click().run()
+
+        assert not app.exception
+        assert any("actualizada desde Mindat" in success.value for success in app.success)
+        with test_session() as db:
+            saved = db.scalar(select(Locality).where(Locality.id == locality_id))
+            assert saved.mindat_locality_id == 456
+            assert saved.name == "Localidad Mindat"
+            assert saved.mine == "Mina Mindat"
+            assert saved.country == "España"
+            assert saved.latitude == pytest.approx(40.5)
+            assert saved.source_url == "https://www.mindat.org/loc-456.html"
+            assert saved.api_raw_json == '{"id": 456}'
     finally:
         engine.dispose()

@@ -25,6 +25,11 @@ def test_alembic_initial_migration_creates_schema(monkeypatch, tmp_path):
         index["name"] == "ix_localities_normalized_key" and index["unique"]
         for index in inspector.get_indexes("localities")
     )
+    with create_engine(f"sqlite:///{db_path.as_posix()}", future=True).connect() as connection:
+        fossil_count = connection.scalar(
+            text("SELECT COUNT(*) FROM mineral_species WHERE name = 'Fósil'")
+        )
+    assert fossil_count == 1
 
 
 def test_locality_migration_deduplicates_existing_rows(monkeypatch, tmp_path):

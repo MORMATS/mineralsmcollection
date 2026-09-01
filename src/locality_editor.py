@@ -70,3 +70,30 @@ def parse_locality_form(
     values["source_url"] = clean_location_text(source_url)
     values["notes"] = clean_location_text(notes)
     return values
+
+
+def merge_mindat_locality_values(
+    values: dict[str, object],
+    mindat_data: dict[str, object],
+) -> dict[str, object]:
+    """Apply Mindat data to parsed form values, preserving manual fallbacks."""
+    merged = dict(values)
+    geographic_fields = ("name", "mine", "region", "country", "latitude", "longitude")
+    geographic_values = {
+        field: mindat_data.get(field)
+        if mindat_data.get(field) not in (None, "")
+        else values.get(field)
+        for field in geographic_fields
+    }
+    merged.update(
+        normalized_locality_values(
+            mindat_locality_id=values.get("mindat_locality_id"),
+            **geographic_values,
+        )
+    )
+
+    for field in ("source_url", "notes", "api_raw_json"):
+        if mindat_data.get(field) not in (None, ""):
+            merged[field] = mindat_data[field]
+
+    return merged

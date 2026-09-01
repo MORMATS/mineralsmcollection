@@ -16,8 +16,12 @@ from src.localities import (
     unmappable_reason,
     valid_coordinate,
 )
-from src.locality_editor import LocalityValidationError, parse_locality_form
-from src.mindat_api import MindatConfigError, update_mindat_locality
+from src.locality_editor import (
+    LocalityValidationError,
+    merge_mindat_locality_values,
+    parse_locality_form,
+)
+from src.mindat_api import MindatConfigError, get_mindat_locality_data, update_mindat_locality
 from src.models import CollectionItem, Locality
 from src.navigation import switch_to_admin_edit
 from src.ui import render_metric_cards, render_page_header, render_section_heading
@@ -190,6 +194,7 @@ try:
             )
 
         if submitted:
+            refreshed_from_mindat = False
             try:
                 values = parse_locality_form(
                     mindat_locality_id=mindat_id,
@@ -202,6 +207,20 @@ try:
                     source_url=source_url,
                     notes=notes,
                 )
+                mindat_id_changed = bool(values["mindat_locality_id"]) and (
+                    form_locality is None
+                    or form_locality.mindat_locality_id != values["mindat_locality_id"]
+                )
+                if mindat_id_changed:
+                    with st.spinner(f"Consultando Mindat {values['mindat_locality_id']}..."):
+                        mindat_data = get_mindat_locality_data(values["mindat_locality_id"])
+                    if not mindat_data:
+                        raise LocalityValidationError(
+                            f"Mindat no devolvió datos para la localidad {values['mindat_locality_id']}."
+                        )
+                    values = merge_mindat_locality_values(values, mindat_data)
+                    refreshed_from_mindat = True
+
                 conflict_query = select(Locality).where(
                     Locality.normalized_key == values["normalized_key"]
                 )
@@ -222,6 +241,9 @@ try:
             except LocalityValidationError as exc:
                 db.rollback()
                 st.error(str(exc))
+            except MindatConfigError as exc:
+                db.rollback()
+                st.error(f"No se pudo actualizar la información desde Mindat: {exc}")
             except IntegrityError:
                 db.rollback()
                 st.error("Ya existe una localización con ese ID de Mindat o con los mismos datos.")
@@ -231,7 +253,11 @@ try:
                 st.error("No se pudo guardar la localización. Los cambios no se han aplicado.")
             else:
                 st.session_state["editing_locality_id"] = locality.id
-                st.session_state["locality_admin_message"] = "Localización guardada correctamente."
+                st.session_state["locality_admin_message"] = (
+                    "Localización guardada y actualizada desde Mindat."
+                    if refreshed_from_mindat
+                    else "Localización guardada correctamente."
+                )
                 st.rerun()
 
     with overview_tab:

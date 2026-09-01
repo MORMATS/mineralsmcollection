@@ -1,3 +1,4 @@
+import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -74,6 +75,35 @@ def test_normalize_mindat_locality_record_extracts_coordinates():
     assert data["longitude"] == -4.0171
     assert data["source_url"] == "https://www.mindat.org/loc-456.html"
     assert '"id": "456"' in data["api_raw_json"]
+
+
+def test_fetch_mindat_locality_detail_falls_back_to_filtered_list(monkeypatch):
+    calls = []
+
+    def fake_get(path, params=None):
+        calls.append((path, params))
+        if path in ("/localities/456/", "/locality/456/", "/locentries/456/"):
+            response = requests.Response()
+            response.status_code = 404
+            raise requests.HTTPError(response=response)
+        if path == "/localities/":
+            return {
+                "results": [
+                    {"id": 123, "txt": "Otra localidad"},
+                    {"id": 456, "txt": "Localidad recuperada"},
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(mindat_api, "_mindat_get", fake_get)
+
+    record = mindat_api.fetch_mindat_locality_detail(456)
+
+    assert record == {"id": 456, "txt": "Localidad recuperada"}
+    assert calls[-1] == (
+        "/localities/",
+        {"format": "json", "id__in": "456", "page_size": 1},
+    )
 
 
 def test_normalize_mindat_locality_record_parses_txt_hierarchy_with_mine():

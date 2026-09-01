@@ -152,6 +152,13 @@ try:
                 except MindatConfigError as exc:
                     db.rollback()
                     st.error(str(exc))
+                except LookupError as exc:
+                    db.rollback()
+                    st.warning(
+                        f"{exc} Comprueba que el número procede de una URL de localidad "
+                        "con formato mindat.org/loc-12345.html; los ID de minerales, "
+                        "fósiles o fichas de ocurrencia no son válidos en este campo."
+                    )
                 except Exception:
                     db.rollback()
                     logger.exception("Could not update locality %s from Mindat", selected.id)

@@ -338,7 +338,41 @@ def fetch_mindat_locality_detail(mindat_locality_id: int) -> dict | None:
         if isinstance(payload, dict):
             return payload
 
-    return None
+    # Mindat occasionally exposes a locality through the collection endpoint
+    # even when the detail route returns 404. The documented ``id__in`` filter
+    # gives us a safe fallback without relying on name matching.
+    try:
+        payload = _mindat_get(
+            "/localities/",
+            params={
+                "format": "json",
+                "id__in": str(mindat_locality_id),
+                "page_size": 1,
+            },
+        )
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if status not in (400, 404, 405):
+            raise
+        return None
+
+    if isinstance(payload, dict):
+        results = payload.get("results") or payload.get("data") or []
+    elif isinstance(payload, list):
+        results = payload
+    else:
+        results = []
+
+    return next(
+        (
+            record
+            for record in results
+            if isinstance(record, dict)
+            and _to_int(_first(record, "id", "mindat_id", "locality_id"))
+            == mindat_locality_id
+        ),
+        None,
+    )
 
 
 def _mindat_locality_hierarchy(record: dict) -> dict[str, str | None]:
